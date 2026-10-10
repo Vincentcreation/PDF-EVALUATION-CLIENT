@@ -23,7 +23,22 @@ from add_acroform_fields import (  # noqa: E402
     build_form,
 )
 
-DEFAULT_OUTPUT = ROOT / "Elevate_Fitness_Client_Assessment_EN.pdf"
+DEFAULT_OUTPUT = ROOT / "Elevate-Fitness-Client-Assessment-Fillable-EN.pdf"
+
+FILL_INSTRUCTIONS_EN = (
+    "Download this PDF and open it in Adobe Acrobat Reader to complete it. "
+    "Add your signature using the 'Fill & Sign' tool, then save a copy. "
+    "Close and reopen your saved copy to check that your answers and signature "
+    "have been retained. Return the completed file as an attachment by replying "
+    "to the email you received."
+)
+
+SIGNATURE_LABELS_EN = {
+    "nom": "Name",
+    "signature": "Signature",
+    "hint": "Use the 'Fill & Sign' tool in Adobe Acrobat Reader. Do not type your name here.",
+    "date": "Date",
+}
 
 IDENTITY_LABELS_EN = {
     "nom_complet": "Full name",
@@ -411,6 +426,9 @@ def render_english_source(source: Path) -> pymupdf.Document:
                 # Section 1 body is redrawn later; leave it (it will be redacted).
                 if page_index == 0 and 174.6 < y0 < 269.0:
                     continue
+                # Printed Name/Signature/Date lines are replaced by the Fill & Sign block.
+                if page_index == 3 and 370.0 < y0 < 450.0:
+                    continue
                 english = LINE_EN.get(text)
                 if english is None or english == text:
                     continue
@@ -480,6 +498,10 @@ def main() -> None:
         identity_labels=IDENTITY_LABELS_EN,
         field_labels=FIELD_LABELS_EN,
         scale_dx=scale_dx,
+        with_instructions=True,
+        section_title="1. BASIC INFORMATION",
+        instruction_text=FILL_INSTRUCTIONS_EN,
+        signature_labels=SIGNATURE_LABELS_EN,
     )
     counts = [len(list(page.widgets() or [])) for page in doc]
     doc.close()

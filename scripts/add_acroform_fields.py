@@ -133,14 +133,16 @@ IDENTITY_LABELS_FR = {
 }
 
 
-def draw_fill_instructions(page: pymupdf.Page, y: float) -> float:
+def draw_fill_instructions(
+    page: pymupdf.Page, y: float, text: str | None = None
+) -> float:
     """Draw the email workflow note. Returns the y just below the box."""
     box = R(MARGIN_LEFT, y, MARGIN_RIGHT, y + INSTRUCTION_BOX_H)
     page.draw_rect(box, color=FIELD_BORDER, fill=(1, 1, 1), width=0.6)
     inner = R(box.x0 + 7, box.y0 + 5.5, box.x1 - 7, box.y1 - 4.5)
     leftover = page.insert_textbox(
         inner,
-        FILL_INSTRUCTIONS_FR,
+        text or FILL_INSTRUCTIONS_FR,
         fontsize=8,
         fontname="helv",
         color=(0.12, 0.12, 0.12),
@@ -180,11 +182,12 @@ def draw_identity_section(
     *,
     with_instructions: bool = False,
     section_title: str = "1. INFORMATIONS DE BASE",
+    instruction_text: str | None = None,
 ) -> tuple[dict[str, pymupdf.Rect], float]:
     """Redraw section 1 with labels above boxed fields. Returns widget rects and end y."""
     labels = labels or IDENTITY_LABELS_FR
     if with_instructions:
-        y = draw_fill_instructions(page, INTRO_END_Y)
+        y = draw_fill_instructions(page, INTRO_END_Y, instruction_text)
         y = draw_section_heading(page, y + 8.0, section_title)
     else:
         y = IDENTITY_BODY_Y
@@ -377,28 +380,39 @@ def add_radio_option(
     groups.setdefault(group, []).append((annot.xref, on_value))
 
 
-def draw_signature_block(page: pymupdf.Page) -> dict[str, pymupdf.Rect]:
+SIGNATURE_LABELS_FR = {
+    "nom": "Nom",
+    "signature": "Signature",
+    "hint": "Utilisez l'outil « Remplir et signer » d'Adobe Acrobat Reader. Ne tapez pas votre nom ici.",
+    "date": "Date",
+}
+
+
+def draw_signature_block(
+    page: pymupdf.Page, labels: dict[str, str] | None = None
+) -> dict[str, pymupdf.Rect]:
     """Replace the short signature line with a Fill-and-Sign area plus a date field.
 
-    A PDF /Sig widget is a certificate signature, not Acrobat's "Remplir et
-    signer" tool. It also sets /SigFlags, which makes several readers save a
-    copy without field appearances. Keep a printed frame only.
+    A PDF /Sig widget is a certificate signature, not Acrobat's Fill & Sign
+    tool. It also sets /SigFlags, which makes several readers save a copy
+    without field appearances. Keep a printed frame only.
     """
+    labels = labels or SIGNATURE_LABELS_FR
     page.add_redact_annot(R(40, 370, PAGE_W - 40, 435), fill=(1, 1, 1))
     page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
     y = 376.0
     rects: dict[str, pymupdf.Rect] = {}
 
-    _draw_label(page, MARGIN_LEFT, y, "Nom")
+    _draw_label(page, MARGIN_LEFT, y, labels["nom"])
     y += LABEL_BAND + LABEL_TO_FIELD
     rects["confirmation_nom"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, FIELD_H))
     y += FIELD_H + ROW_GAP
 
-    _draw_label(page, MARGIN_LEFT, y, "Signature")
+    _draw_label(page, MARGIN_LEFT, y, labels["signature"])
     y += LABEL_BAND
     page.insert_text(
         (MARGIN_LEFT, y + 8.0),
-        "Utilisez l'outil « Remplir et signer » d'Adobe Acrobat Reader. Ne tapez pas votre nom ici.",
+        labels["hint"],
         fontsize=7.5,
         fontname="helv",
         color=(0.25, 0.25, 0.25),
@@ -413,7 +427,7 @@ def draw_signature_block(page: pymupdf.Page) -> dict[str, pymupdf.Rect]:
     )
     y += sig_h + ROW_GAP
 
-    _draw_label(page, MARGIN_LEFT, y, "Date")
+    _draw_label(page, MARGIN_LEFT, y, labels["date"])
     y += LABEL_BAND + LABEL_TO_FIELD
     rects["date"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, 320.0, y, FIELD_H))
     return rects
@@ -548,6 +562,8 @@ def build_form(
     scale_dx: dict[str, float] | None = None,
     with_instructions: bool = False,
     section_title: str = "1. INFORMATIONS DE BASE",
+    instruction_text: str | None = None,
+    signature_labels: dict[str, str] | None = None,
 ) -> pymupdf.Document:
     source_doc = pymupdf.open(source)
     doc = pymupdf.open(source)
@@ -574,6 +590,7 @@ def build_form(
         labels=identity_labels,
         with_instructions=with_instructions,
         section_title=section_title,
+        instruction_text=instruction_text,
     )
     s2, s3, d2 = shifts["s2_dy"], shifts["s3_dy"], shifts["p2_dy"]
     id_l = identity_labels or IDENTITY_LABELS_FR
@@ -975,16 +992,17 @@ def build_form(
         multiline=True,
         tooltip="Autre chose a savoir pour adapter l'accompagnement",
     )
-    confirm = draw_signature_block(p3)
+    sig_l = signature_labels or SIGNATURE_LABELS_FR
+    confirm = draw_signature_block(p3, sig_l)
     add_text(
         p3,
         "confirmation_nom",
         confirm["confirmation_nom"],
-        tooltip="Nom",
+        tooltip=sig_l["nom"],
         boxed=True,
         fontsize=9,
     )
-    add_text(p3, "date", confirm["date"], tooltip="Date", boxed=True, fontsize=9)
+    add_text(p3, "date", confirm["date"], tooltip=sig_l["date"], boxed=True, fontsize=9)
 
     if field_labels:
         apply_field_labels(doc, field_labels)

@@ -10,16 +10,16 @@ Le PDF original reste la couche visuelle de référence pour les sections 2 à 9
 | --- | --- |
 | `original/Elevate_Fitness_Formulaire_Client.pdf` | PDF original (design, texte, mise en page) |
 | `Elevate-Formulaire-Evaluation-Client-remplissable.pdf` | Version française à envoyer aux clients |
-| `Elevate_Fitness_Client_Assessment_EN.pdf` | Version anglaise à envoyer aux clients |
+| `Elevate-Fitness-Client-Assessment-Fillable-EN.pdf` | Version anglaise à envoyer aux clients |
 | `scripts/add_acroform_fields.py` | Génère le PDF français remplissable |
 | `scripts/build_english_form.py` | Traduit le visuel puis génère le PDF anglais remplissable |
 
-## Utilisation (version française)
+## Utilisation
 
-Envoyer `Elevate-Formulaire-Evaluation-Client-remplissable.pdf` par courriel. Le client :
+Envoyer le PDF de la langue du client par courriel (`Elevate-Formulaire-Evaluation-Client-remplissable.pdf` ou `Elevate-Fitness-Client-Assessment-Fillable-EN.pdf`). Le client :
 
 1. Télécharge le PDF et l'ouvre dans **Adobe Acrobat Reader** (ordinateur de préférence).
-2. Remplit les champs, puis ajoute sa signature avec l'outil **Remplir et signer**.
+2. Remplit les champs, puis ajoute sa signature avec l'outil **Remplir et signer** / **Fill & Sign**.
 3. Choisit **Enregistrer une copie**, ferme le fichier, le rouvre pour vérifier, puis le renvoie en pièce jointe.
 
 Ne pas compter sur le visualiseur PDF de Chrome, de Gmail, d'iMessage ou des apps Fichiers iOS/Android pour enregistrer le formulaire : ces lecteurs ignorent souvent les apparences AcroForm. Adobe Acrobat Reader (desktop ou application mobile) est le lecteur pris en charge.
