@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Add AcroForm fields on top of the original Elevate Fitness client form.
 
-The original PDF is kept as the visual layer. This script overlays interactive
-fields aligned on the printed lines, squares and 1-10 scales, and inserts the
-Date de naissance / Age row into section 1 so those fields are visible.
+The original PDF is the visual layer for sections 2-9. Section 1 is redrawn with
+labels above boxed fields, then the following sections are shifted so they are
+not cropped. Interactive fields are aligned on that layout.
 """
 
 from __future__ import annotations
@@ -25,6 +25,26 @@ CHECK_INSET = 0.2
 RADIO_FLAGS = (
     pymupdf.PDF_BTN_FIELD_IS_RADIO | pymupdf.PDF_BTN_FIELD_IS_NO_TOGGLE_TO_OFF
 )
+MM = 72.0 / 25.4
+GOLD = (0.839, 0.631, 0.231)
+FIELD_BORDER = (0.66, 0.56, 0.40)
+MARGIN_LEFT = 48.52
+MARGIN_RIGHT = 546.76
+CONTENT_WIDTH = MARGIN_RIGHT - MARGIN_LEFT
+FIELD_H = 9.0 * MM
+PROFESSION_H = 16.0 * MM
+LABEL_BAND = 11.0
+LABEL_TO_FIELD = 2.0
+ROW_GAP = 9.0
+COL_GAP = 8.0
+SECTION_GAP = 18.0
+SECTION2_SRC_Y0 = 269.23
+SECTION3_SRC_Y0 = 514.23
+SECTION3_SRC_Y1 = 800.0
+PAGE2_SRC_Y0 = 36.54
+PAGE2_SRC_Y1 = 486.0
+FOOTER_TOP = 811.0
+WIDGET_INSET = 0.5
 
 
 def R(x0: float, y0: float, x1: float, y1: float) -> pymupdf.Rect:
@@ -52,65 +72,142 @@ def scale_box(x0: float, y0: float, x1: float, y1: float) -> pymupdf.Rect:
     return pymupdf.Rect(cx - half_w, cy - half_h, cx + half_w, cy + half_h)
 
 
-LABEL_SIZE = 8.5
-LABEL_BASELINE_OFFSET = 9.06  # Helvetica-Bold 8.5 vs original span y0
+def shift_y(y: float, dy: float) -> float:
+    return y + dy
 
 
-def _cover(page: pymupdf.Page, rect: pymupdf.Rect) -> None:
-    page.draw_rect(rect, color=None, fill=(1, 1, 1), width=0)
+def shift_rect(rect: pymupdf.Rect, dy: float) -> pymupdf.Rect:
+    return R(rect.x0, rect.y0 + dy, rect.x1, rect.y1 + dy)
 
 
-def _insert_label(page: pymupdf.Page, x: float, span_y0: float, text: str) -> float:
-    baseline = span_y0 + LABEL_BASELINE_OFFSET
-    page.insert_text(
-        (x, baseline),
-        text,
-        fontsize=LABEL_SIZE,
-        fontname="hebo",
-        color=(0, 0, 0),
+def _columns(fractions: list[float]) -> list[tuple[float, float]]:
+    usable = CONTENT_WIDTH - COL_GAP * (len(fractions) - 1)
+    x = MARGIN_LEFT
+    cols = []
+    for frac in fractions:
+        w = usable * frac
+        cols.append((x, x + w))
+        x += w + COL_GAP
+    return cols
+
+
+def _draw_label(page: pymupdf.Page, x: float, y: float, text: str) -> None:
+    page.insert_text((x, y + 8.5), text, fontsize=8, fontname="hebo", color=(0.12, 0.12, 0.12))
+
+
+def _field_rect(x0: float, x1: float, y: float, height: float) -> pymupdf.Rect:
+    return R(x0, y, x1, y + height)
+
+
+def _draw_field_box(page: pymupdf.Page, rect: pymupdf.Rect) -> pymupdf.Rect:
+    """Draw a print-visible box and return a slightly inset widget hit area."""
+    page.draw_rect(rect, color=FIELD_BORDER, fill=(1, 1, 1), width=0.6)
+    return R(
+        rect.x0 + WIDGET_INSET,
+        rect.y0 + WIDGET_INSET,
+        rect.x1 - WIDGET_INSET,
+        rect.y1 - WIDGET_INSET,
     )
-    return pymupdf.get_text_length(text, fontname="hebo", fontsize=LABEL_SIZE)
 
 
-def _insert_underscores(page: pymupdf.Page, x0: float, x1: float, span_y0: float) -> None:
-    baseline = span_y0 + LABEL_BASELINE_OFFSET
-    width = max(0.0, x1 - x0)
-    char_w = pymupdf.get_text_length("_", fontname="helv", fontsize=LABEL_SIZE)
-    count = max(1, int(width / char_w))
-    page.insert_text(
-        (x0, baseline),
-        "_" * count,
-        fontsize=LABEL_SIZE,
-        fontname="helv",
-        color=(0, 0, 0),
+def draw_identity_section(page: pymupdf.Page) -> tuple[dict[str, pymupdf.Rect], float]:
+    """Redraw section 1 with labels above boxed fields. Returns widget rects and end y."""
+    y = 178.0
+    rects: dict[str, pymupdf.Rect] = {}
+
+    _draw_label(page, MARGIN_LEFT, y, "Nom complet")
+    y += LABEL_BAND + LABEL_TO_FIELD
+    rects["nom_complet"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, FIELD_H))
+    y += FIELD_H + ROW_GAP
+
+    _draw_label(page, MARGIN_LEFT, y, "Courriel")
+    y += LABEL_BAND + LABEL_TO_FIELD
+    rects["courriel"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, FIELD_H))
+    y += FIELD_H + ROW_GAP
+
+    (tel_x0, tel_x1), (dob_x0, dob_x1), (age_x0, age_x1) = _columns([0.42, 0.40, 0.18])
+    row_y = y
+    _draw_label(page, tel_x0, row_y, "Téléphone")
+    _draw_label(page, dob_x0, row_y, "Date de naissance (JJ/MM/AAAA)")
+    _draw_label(page, age_x0, row_y, "Âge")
+    y += LABEL_BAND + LABEL_TO_FIELD
+    rects["telephone"] = _draw_field_box(page, _field_rect(tel_x0, tel_x1, y, FIELD_H))
+    rects["date_naissance"] = _draw_field_box(page, _field_rect(dob_x0, dob_x1, y, FIELD_H))
+    rects["age"] = _draw_field_box(page, _field_rect(age_x0, age_x1, y, FIELD_H))
+    y += FIELD_H + ROW_GAP
+
+    _draw_label(page, MARGIN_LEFT, y, "Profession / rythme de travail")
+    y += LABEL_BAND + LABEL_TO_FIELD
+    rects["profession"] = _draw_field_box(
+        page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, PROFESSION_H)
+    )
+    y += PROFESSION_H + ROW_GAP
+
+    (t_x0, t_x1), (p_x0, p_x1), (v_x0, v_x1) = _columns([1 / 3, 1 / 3, 1 / 3])
+    row_y = y
+    _draw_label(page, t_x0, row_y, "Taille")
+    _draw_label(page, p_x0, row_y, "Poids actuel")
+    _draw_label(page, v_x0, row_y, "Poids visé (facultatif)")
+    y += LABEL_BAND + LABEL_TO_FIELD
+    rects["taille"] = _draw_field_box(page, _field_rect(t_x0, t_x1, y, FIELD_H))
+    rects["poids_actuel"] = _draw_field_box(page, _field_rect(p_x0, p_x1, y, FIELD_H))
+    rects["poids_vise"] = _draw_field_box(page, _field_rect(v_x0, v_x1, y, FIELD_H))
+    y += FIELD_H + SECTION_GAP
+    return rects, y
+
+
+def identity_section_end() -> float:
+    y = 178.0
+    standard = LABEL_BAND + LABEL_TO_FIELD + FIELD_H + ROW_GAP
+    y += standard * 3
+    y += LABEL_BAND + LABEL_TO_FIELD + PROFESSION_H + ROW_GAP
+    y += LABEL_BAND + LABEL_TO_FIELD + FIELD_H + SECTION_GAP
+    return y
+
+
+def relayout_pages(doc: pymupdf.Document, source: pymupdf.Document, section1_end: float) -> dict:
+    """Keep other sections intact, but move them so section 1 does not overlap."""
+    s2_h = SECTION3_SRC_Y0 - SECTION2_SRC_Y0
+    s3_h = SECTION3_SRC_Y1 - SECTION3_SRC_Y0
+    p2_h = PAGE2_SRC_Y1 - PAGE2_SRC_Y0
+    s2_dest = section1_end
+    s3_dest = 36.5
+    s4_dest = s3_dest + s3_h + 12.0
+    if s2_dest + s2_h > FOOTER_TOP:
+        raise RuntimeError("Section 2 would overflow page 1")
+    if s4_dest + p2_h > FOOTER_TOP:
+        raise RuntimeError("Sections 3-4 would overflow page 2")
+
+    page1 = doc[0]
+    page1.add_redact_annot(R(0, 174.6, PAGE_W, FOOTER_TOP), fill=(1, 1, 1))
+    page1.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
+    page1.show_pdf_page(
+        R(0, s2_dest, PAGE_W, s2_dest + s2_h),
+        source,
+        0,
+        clip=R(0, SECTION2_SRC_Y0, PAGE_W, SECTION3_SRC_Y0),
     )
 
-
-def insert_birthdate_age_row(page: pymupdf.Page) -> None:
-    """Add visible Date de naissance / Age labels on the unused profession-label line.
-
-    Profession stays on the line below, now in the same label+underline pattern as
-    Nom complet / Courriel / Telephone.
-    """
-    page.add_redact_annot(pymupdf.Rect(48.4, 226.3, 175.0, 239.6), fill=(1, 1, 1))
-    page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
-    _cover(page, pymupdf.Rect(48.4, 237.2, 438.0, 251.0))
-
-    dob_y0 = 227.44
-    w_dob = _insert_label(page, 48.52, dob_y0, "Date de naissance :")
-    dob_line_x0 = 48.52 + w_dob + 4.0
-    dob_line_x1 = 338.0
-    _insert_underscores(page, dob_line_x0, dob_line_x1, 227.40)
-
-    age_x = 352.0
-    w_age = _insert_label(page, age_x, dob_y0, "Âge :")
-    age_line_x0 = age_x + w_age + 8.0
-    age_line_x1 = 531.0
-    _insert_underscores(page, age_line_x0, age_line_x1, 227.40)
-
-    prof_y0 = 238.44
-    w_prof = _insert_label(page, 48.52, prof_y0, "Profession / rythme de travail :")
-    _insert_underscores(page, 48.52 + w_prof + 4.0, 497.45, 238.40)
+    page2 = doc[1]
+    page2.add_redact_annot(R(0, 0, PAGE_W, FOOTER_TOP), fill=(1, 1, 1))
+    page2.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
+    page2.show_pdf_page(
+        R(0, s3_dest, PAGE_W, s3_dest + s3_h),
+        source,
+        0,
+        clip=R(0, SECTION3_SRC_Y0, PAGE_W, SECTION3_SRC_Y1),
+    )
+    page2.show_pdf_page(
+        R(0, s4_dest, PAGE_W, s4_dest + p2_h),
+        source,
+        1,
+        clip=R(0, PAGE2_SRC_Y0, PAGE_W, PAGE2_SRC_Y1),
+    )
+    return {
+        "s2_dy": s2_dest - SECTION2_SRC_Y0,
+        "s3_dy": s3_dest - SECTION3_SRC_Y0,
+        "p2_dy": s4_dest - PAGE2_SRC_Y0,
+    }
 
 
 def add_text(
@@ -122,6 +219,7 @@ def add_text(
     fontsize: float = TEXT_SIZE,
     tooltip: str | None = None,
     maxlen: int = 0,
+    boxed: bool = False,
 ) -> None:
     widget = pymupdf.Widget()
     widget.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT
@@ -134,9 +232,17 @@ def add_text(
     widget.text_font = "Helv"
     widget.text_color = TEXT_COLOR
     widget.text_maxlen = maxlen
-    widget.border_width = 0
-    widget.border_color = None
-    widget.fill_color = None
+    if boxed:
+        # Page content already draws the print-visible box; keep the widget
+        # fill white and a hairline so Acrobat still highlights the field.
+        widget.border_width = 0.4
+        widget.border_color = FIELD_BORDER
+        widget.fill_color = (1, 1, 1)
+        widget.border_style = "S"
+    else:
+        widget.border_width = 0
+        widget.border_color = None
+        widget.fill_color = None
     widget.field_value = ""
     page.add_widget(widget)
 
@@ -309,6 +415,7 @@ def add_scale(
 
 
 def build_form(source: Path, output: Path) -> pymupdf.Document:
+    source_doc = pymupdf.open(source)
     doc = pymupdf.open(source)
     if doc.page_count != 4:
         raise RuntimeError(f"Expected 4 pages, found {doc.page_count}")
@@ -319,31 +426,40 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
     groups: dict[str, list[tuple[int, str]]] = {}
     p0, p1, p2, p3 = doc[0], doc[1], doc[2], doc[3]
 
-    # ------------------------------------------------------------------ page 1
-    insert_birthdate_age_row(p0)
-    add_text(p0, "nom_complet", R(109.9, 176.35, 497.5, 188.15), tooltip="Nom complet")
-    add_text(p0, "courriel", R(88.7, 193.35, 476.2, 205.15), tooltip="Courriel")
-    add_text(p0, "telephone", R(98.6, 210.35, 486.1, 222.15), tooltip="Telephone")
+    # ------------------------------------------------------------------ page 1 section 1
+    shifts = relayout_pages(doc, source_doc, identity_section_end())
+    source_doc.close()
+    identity, _section1_end = draw_identity_section(p0)
+    s2, s3, d2 = shifts["s2_dy"], shifts["s3_dy"], shifts["p2_dy"]
+
+    boxed = dict(boxed=True, fontsize=9)
+    add_text(p0, "nom_complet", identity["nom_complet"], tooltip="Nom complet", **boxed)
+    add_text(p0, "courriel", identity["courriel"], tooltip="Courriel", **boxed)
+    add_text(p0, "telephone", identity["telephone"], tooltip="Téléphone", **boxed)
     add_text(
         p0,
         "date_naissance",
-        R(131.9, 227.35, 338.0, 239.15),
-        tooltip="Date de naissance",
+        identity["date_naissance"],
+        tooltip="Date de naissance (JJ/MM/AAAA)",
+        **boxed,
     )
-    add_text(p0, "age", R(376.1, 227.35, 531.0, 239.15), tooltip="Âge")
+    add_text(p0, "age", identity["age"], tooltip="Âge", **boxed)
     add_text(
         p0,
         "profession",
-        R(176.8, 238.35, 497.5, 250.15),
+        identity["profession"],
+        multiline=True,
         tooltip="Profession / rythme de travail",
+        **boxed,
     )
-    add_text(p0, "taille", R(77.8, 255.35, 172.3, 267.15), tooltip="Taille")
-    add_text(p0, "poids_actuel", R(239.4, 255.35, 333.9, 267.15), tooltip="Poids actuel")
+    add_text(p0, "taille", identity["taille"], tooltip="Taille", **boxed)
+    add_text(p0, "poids_actuel", identity["poids_actuel"], tooltip="Poids actuel", **boxed)
     add_text(
         p0,
         "poids_vise",
-        R(436.4, 255.35, 531.0, 267.15),
-        tooltip="Poids vise (facultatif)",
+        identity["poids_vise"],
+        tooltip="Poids visé (facultatif)",
+        **boxed,
     )
 
     objectifs = [
@@ -359,19 +475,24 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
         ("autre", 303.64, 389.00, "Autre"),
     ]
     for key, x, y, label in objectifs:
-        add_checkbox(p0, f"objectif_{key}", square(x, y), tooltip=label)
-    add_text(p0, "objectif_autre_texte", R(345.2, 387.35, 430.3, 399.15), tooltip="Objectif autre")
+        add_checkbox(p0, f"objectif_{key}", square(x, shift_y(y, s2)), tooltip=label)
+    add_text(
+        p0,
+        "objectif_autre_texte",
+        shift_rect(R(345.2, 387.35, 430.3, 399.15), s2),
+        tooltip="Objectif autre",
+    )
     add_text(
         p0,
         "objectif_description",
-        R(48.5, 420.2, 502.2, 454.2),
+        shift_rect(R(48.5, 420.2, 502.2, 454.2), s2),
         multiline=True,
         tooltip="Description de l'objectif (3 a 6 mois)",
     )
     add_text(
         p0,
         "objectif_pourquoi",
-        R(48.5, 471.2, 502.2, 494.2),
+        shift_rect(R(48.5, 471.2, 502.2, 494.2), s2),
         multiline=True,
         tooltip="Pourquoi cet objectif est important",
     )
@@ -380,25 +501,25 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
         groups,
         "engagement",
         [
-            ("1", 177.70, 497.41, 182.70, 509.80),
-            ("2", 185.20, 497.41, 190.21, 509.80),
-            ("3", 192.71, 497.41, 197.71, 509.80),
-            ("4", 200.21, 497.41, 205.22, 509.80),
-            ("5", 207.72, 497.41, 212.72, 509.80),
-            ("6", 215.23, 497.41, 220.23, 509.80),
-            ("7", 222.73, 497.41, 227.74, 509.80),
-            ("8", 230.24, 497.41, 235.24, 509.80),
-            ("9", 237.74, 497.41, 242.75, 509.80),
-            ("10", 245.25, 497.41, 255.26, 509.80),
+            ("1", 177.70, shift_y(497.41, s2), 182.70, shift_y(509.80, s2)),
+            ("2", 185.20, shift_y(497.41, s2), 190.21, shift_y(509.80, s2)),
+            ("3", 192.71, shift_y(497.41, s2), 197.71, shift_y(509.80, s2)),
+            ("4", 200.21, shift_y(497.41, s2), 205.22, shift_y(509.80, s2)),
+            ("5", 207.72, shift_y(497.41, s2), 212.72, shift_y(509.80, s2)),
+            ("6", 215.23, shift_y(497.41, s2), 220.23, shift_y(509.80, s2)),
+            ("7", 222.73, shift_y(497.41, s2), 227.74, shift_y(509.80, s2)),
+            ("8", 230.24, shift_y(497.41, s2), 235.24, shift_y(509.80, s2)),
+            ("9", 237.74, shift_y(497.41, s2), 242.75, shift_y(509.80, s2)),
+            ("10", 245.25, shift_y(497.41, s2), 255.26, shift_y(509.80, s2)),
         ],
         "Niveau d'engagement actuel",
     )
 
-    add_radio_option(p0, groups, "niveau", "debutant", square(48.52, 558.00), tooltip="Debutant")
+    add_radio_option(p1, groups, "niveau", "debutant", square(48.52, shift_y(558.00, s3)), tooltip="Debutant")
     add_radio_option(
-        p0, groups, "niveau", "intermediaire", square(218.60, 558.00), tooltip="Intermediaire"
+        p1, groups, "niveau", "intermediaire", square(218.60, shift_y(558.00, s3)), tooltip="Intermediaire"
     )
-    add_radio_option(p0, groups, "niveau", "avance", square(388.68, 558.00), tooltip="Avance")
+    add_radio_option(p1, groups, "niveau", "avance", square(388.68, shift_y(558.00, s3)), tooltip="Avance")
 
     activites = [
         ("musculation", 48.52, 595.00, "Musculation"),
@@ -409,24 +530,29 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
         ("autre", 303.64, 633.00, "Autre"),
     ]
     for key, x, y, label in activites:
-        add_checkbox(p0, f"activites_{key}", square(x, y), tooltip=label)
-    add_text(p0, "activites_autre_texte", R(345.2, 631.35, 430.3, 643.15), tooltip="Activite autre")
+        add_checkbox(p1, f"activites_{key}", square(x, shift_y(y, s3)), tooltip=label)
+    add_text(
+        p1,
+        "activites_autre_texte",
+        shift_rect(R(345.2, 631.35, 430.3, 643.15), s3),
+        tooltip="Activite autre",
+    )
 
-    add_radio_option(p0, groups, "jours", "2", square(48.52, 670.00), tooltip="2 jours")
-    add_radio_option(p0, groups, "jours", "3", square(150.57, 670.00), tooltip="3 jours")
-    add_radio_option(p0, groups, "jours", "4", square(252.61, 670.00), tooltip="4 jours")
-    add_radio_option(p0, groups, "jours", "5", square(354.66, 670.00), tooltip="5 jours")
-    add_radio_option(p0, groups, "jours", "6plus", square(456.71, 670.00), tooltip="6 jours ou plus")
+    add_radio_option(p1, groups, "jours", "2", square(48.52, shift_y(670.00, s3)), tooltip="2 jours")
+    add_radio_option(p1, groups, "jours", "3", square(150.57, shift_y(670.00, s3)), tooltip="3 jours")
+    add_radio_option(p1, groups, "jours", "4", square(252.61, shift_y(670.00, s3)), tooltip="4 jours")
+    add_radio_option(p1, groups, "jours", "5", square(354.66, shift_y(670.00, s3)), tooltip="5 jours")
+    add_radio_option(p1, groups, "jours", "6plus", square(456.71, shift_y(670.00, s3)), tooltip="6 jours ou plus")
 
-    add_radio_option(p0, groups, "duree", "30", square(48.52, 707.00), tooltip="30 min")
-    add_radio_option(p0, groups, "duree", "45", square(176.08, 707.00), tooltip="45 min")
-    add_radio_option(p0, groups, "duree", "60", square(303.64, 707.00), tooltip="60 min")
-    add_radio_option(p0, groups, "duree", "75plus", square(431.20, 707.00), tooltip="75 min ou +")
+    add_radio_option(p1, groups, "duree", "30", square(48.52, shift_y(707.00, s3)), tooltip="30 min")
+    add_radio_option(p1, groups, "duree", "45", square(176.08, shift_y(707.00, s3)), tooltip="45 min")
+    add_radio_option(p1, groups, "duree", "60", square(303.64, shift_y(707.00, s3)), tooltip="60 min")
+    add_radio_option(p1, groups, "duree", "75plus", square(431.20, shift_y(707.00, s3)), tooltip="75 min ou +")
 
     add_text(
-        p0,
+        p1,
         "lieu_equipement",
-        R(48.5, 738.2, 502.2, 772.2),
+        shift_rect(R(48.5, 738.2, 502.2, 772.2), s3),
         multiline=True,
         tooltip="Lieu d'entrainement et equipement disponible",
     )
@@ -470,9 +596,31 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
         ),
     ]
     for key, non_sq, oui_sq, details, label in safety:
-        add_radio_option(p1, groups, key, "non", square(*non_sq), tooltip=f"{label} : Non")
-        add_radio_option(p1, groups, key, "oui", square(*oui_sq), tooltip=f"{label} : Oui")
-        add_text(p1, f"{key}_details", details, multiline=True, tooltip=f"{label} : precisions")
+        n0, n1, n2, n3 = non_sq
+        o0, o1, o2, o3 = oui_sq
+        add_radio_option(
+            p1,
+            groups,
+            key,
+            "non",
+            square(n0, shift_y(n1, d2), n2, shift_y(n3, d2)),
+            tooltip=f"{label} : Non",
+        )
+        add_radio_option(
+            p1,
+            groups,
+            key,
+            "oui",
+            square(o0, shift_y(o1, d2), o2, shift_y(o3, d2)),
+            tooltip=f"{label} : Oui",
+        )
+        add_text(
+            p1,
+            f"{key}_details",
+            shift_rect(details, d2),
+            multiline=True,
+            tooltip=f"{label} : precisions",
+        )
 
     # ------------------------------------------------------------------ page 3
     add_radio_option(
