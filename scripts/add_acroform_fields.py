@@ -45,6 +45,16 @@ PAGE2_SRC_Y0 = 36.54
 PAGE2_SRC_Y1 = 486.0
 FOOTER_TOP = 811.0
 WIDGET_INSET = 0.5
+INTRO_END_Y = 150.5
+IDENTITY_BODY_Y = 178.0
+INSTRUCTION_BOX_H = 56.0
+FILL_INSTRUCTIONS_FR = (
+    "Téléchargez ce PDF et ouvrez-le dans Adobe Acrobat Reader pour le remplir. "
+    "Ajoutez votre signature avec l'outil « Remplir et signer », puis choisissez "
+    "« Enregistrer une copie ». Fermez et rouvrez votre copie pour vérifier que "
+    "vos réponses et votre signature sont conservées. Retournez ensuite ce fichier "
+    "en pièce jointe en répondant au courriel reçu."
+)
 
 
 def R(x0: float, y0: float, x1: float, y1: float) -> pymupdf.Rect:
@@ -123,12 +133,64 @@ IDENTITY_LABELS_FR = {
 }
 
 
+def draw_fill_instructions(page: pymupdf.Page, y: float) -> float:
+    """Draw the email workflow note. Returns the y just below the box."""
+    box = R(MARGIN_LEFT, y, MARGIN_RIGHT, y + INSTRUCTION_BOX_H)
+    page.draw_rect(box, color=FIELD_BORDER, fill=(1, 1, 1), width=0.6)
+    inner = R(box.x0 + 7, box.y0 + 5.5, box.x1 - 7, box.y1 - 4.5)
+    leftover = page.insert_textbox(
+        inner,
+        FILL_INSTRUCTIONS_FR,
+        fontsize=8,
+        fontname="helv",
+        color=(0.12, 0.12, 0.12),
+        align=pymupdf.TEXT_ALIGN_LEFT,
+    )
+    if leftover < 0:
+        raise RuntimeError("Fill instructions overflowed their box")
+    return box.y1
+
+
+def draw_section_heading(page: pymupdf.Page, y: float, text: str) -> float:
+    """Draw a section title and gold rule. Returns the y where field labels start."""
+    page.insert_text((MARGIN_LEFT, y + 12.5), text, fontsize=11.5, fontname="hebo", color=(0, 0, 0))
+    rule_y = y + 17.9
+    page.draw_line(
+        pymupdf.Point(42.52, rule_y),
+        pymupdf.Point(552.76, rule_y),
+        color=GOLD,
+        width=0.8,
+    )
+    return rule_y + 4.0
+
+
+def identity_body_y(with_instructions: bool = False) -> float:
+    if not with_instructions:
+        return IDENTITY_BODY_Y
+    y = INTRO_END_Y
+    y += INSTRUCTION_BOX_H
+    y += 8.0
+    y += 17.9 + 4.0
+    return y
+
+
 def draw_identity_section(
-    page: pymupdf.Page, labels: dict[str, str] | None = None
+    page: pymupdf.Page,
+    labels: dict[str, str] | None = None,
+    *,
+    with_instructions: bool = False,
+    section_title: str = "1. INFORMATIONS DE BASE",
 ) -> tuple[dict[str, pymupdf.Rect], float]:
     """Redraw section 1 with labels above boxed fields. Returns widget rects and end y."""
     labels = labels or IDENTITY_LABELS_FR
-    y = 178.0
+    if with_instructions:
+        y = draw_fill_instructions(page, INTRO_END_Y)
+        y = draw_section_heading(page, y + 8.0, section_title)
+    else:
+        y = IDENTITY_BODY_Y
+    expected = identity_body_y(with_instructions)
+    if abs(y - expected) > 0.2:
+        raise RuntimeError(f"identity start mismatch: {y:.2f} vs {expected:.2f}")
     rects: dict[str, pymupdf.Rect] = {}
 
     _draw_label(page, MARGIN_LEFT, y, labels["nom_complet"])
@@ -172,8 +234,8 @@ def draw_identity_section(
     return rects, y
 
 
-def identity_section_end() -> float:
-    y = 178.0
+def identity_section_end(with_instructions: bool = False) -> float:
+    y = identity_body_y(with_instructions)
     standard = LABEL_BAND + LABEL_TO_FIELD + FIELD_H + ROW_GAP
     y += standard * 3
     y += LABEL_BAND + LABEL_TO_FIELD + PROFESSION_H + ROW_GAP
@@ -181,7 +243,13 @@ def identity_section_end() -> float:
     return y
 
 
-def relayout_pages(doc: pymupdf.Document, source: pymupdf.Document, section1_end: float) -> dict:
+def relayout_pages(
+    doc: pymupdf.Document,
+    source: pymupdf.Document,
+    section1_end: float,
+    *,
+    redact_from: float = 174.6,
+) -> dict:
     """Keep other sections intact, but move them so section 1 does not overlap."""
     s2_h = SECTION3_SRC_Y0 - SECTION2_SRC_Y0
     s3_h = SECTION3_SRC_Y1 - SECTION3_SRC_Y0
@@ -195,7 +263,7 @@ def relayout_pages(doc: pymupdf.Document, source: pymupdf.Document, section1_end
         raise RuntimeError("Sections 3-4 would overflow page 2")
 
     page1 = doc[0]
-    page1.add_redact_annot(R(0, 174.6, PAGE_W, FOOTER_TOP), fill=(1, 1, 1))
+    page1.add_redact_annot(R(0, redact_from, PAGE_W, FOOTER_TOP), fill=(1, 1, 1))
     page1.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
     page1.show_pdf_page(
         R(0, s2_dest, PAGE_W, s2_dest + s2_h),
@@ -260,7 +328,9 @@ def add_text(
         widget.border_color = None
         widget.fill_color = None
     widget.field_value = ""
-    page.add_widget(widget)
+    annot = page.add_widget(widget)
+    # Force a dedicated appearance stream so later saves cannot share /AP.
+    annot.update()
 
 
 def add_checkbox(
@@ -280,7 +350,8 @@ def add_checkbox(
     widget.fill_color = None
     widget.text_color = TEXT_COLOR
     widget.field_value = "Off"
-    page.add_widget(widget)
+    annot = page.add_widget(widget)
+    annot.update()
 
 
 def add_radio_option(
@@ -306,22 +377,46 @@ def add_radio_option(
     groups.setdefault(group, []).append((annot.xref, on_value))
 
 
-def add_signature(
-    page: pymupdf.Page,
-    name: str,
-    rect: pymupdf.Rect,
-    *,
-    tooltip: str = "Signature",
-) -> None:
-    widget = pymupdf.Widget()
-    widget.field_type = pymupdf.PDF_WIDGET_TYPE_SIGNATURE
-    widget.field_name = name
-    widget.field_label = tooltip
-    widget.rect = rect
-    widget.border_width = 0
-    widget.border_color = None
-    widget.fill_color = None
-    page.add_widget(widget)
+def draw_signature_block(page: pymupdf.Page) -> dict[str, pymupdf.Rect]:
+    """Replace the short signature line with a Fill-and-Sign area plus a date field.
+
+    A PDF /Sig widget is a certificate signature, not Acrobat's "Remplir et
+    signer" tool. It also sets /SigFlags, which makes several readers save a
+    copy without field appearances. Keep a printed frame only.
+    """
+    page.add_redact_annot(R(40, 370, PAGE_W - 40, 435), fill=(1, 1, 1))
+    page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
+    y = 376.0
+    rects: dict[str, pymupdf.Rect] = {}
+
+    _draw_label(page, MARGIN_LEFT, y, "Nom")
+    y += LABEL_BAND + LABEL_TO_FIELD
+    rects["confirmation_nom"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, FIELD_H))
+    y += FIELD_H + ROW_GAP
+
+    _draw_label(page, MARGIN_LEFT, y, "Signature")
+    y += LABEL_BAND
+    page.insert_text(
+        (MARGIN_LEFT, y + 8.0),
+        "Utilisez l'outil « Remplir et signer » d'Adobe Acrobat Reader. Ne tapez pas votre nom ici.",
+        fontsize=7.5,
+        fontname="helv",
+        color=(0.25, 0.25, 0.25),
+    )
+    y += 12.0
+    sig_h = 22.0 * MM
+    page.draw_rect(
+        R(MARGIN_LEFT, y, MARGIN_RIGHT, y + sig_h),
+        color=FIELD_BORDER,
+        fill=(1, 1, 1),
+        width=0.6,
+    )
+    y += sig_h + ROW_GAP
+
+    _draw_label(page, MARGIN_LEFT, y, "Date")
+    y += LABEL_BAND + LABEL_TO_FIELD
+    rects["date"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, 320.0, y, FIELD_H))
+    return rects
 
 
 def _pdf(doc: pymupdf.Document):
@@ -409,6 +504,9 @@ def finalize_radio_groups(
     mupdf.pdf_dict_put(form, mupdf.PDF_ENUM_NAME_Fields, new_fields)
     mupdf.pdf_dict_put(form, mupdf.pdf_new_name("NeedAppearances"), mupdf.PDF_TRUE)
     mupdf.pdf_dict_put_text_string(form, mupdf.pdf_new_name("DA"), "0 0 0 rg /Helv 9 Tf")
+    # A leftover /SigFlags 3 (AppendOnly) makes "Enregistrer une copie" drop
+    # field appearances in Acrobat clones, Preview, Chrome and many mobile apps.
+    mupdf.pdf_dict_dels(form, "SigFlags")
     _ensure_form_fonts(pdf, form)
 
 
@@ -448,6 +546,8 @@ def build_form(
     identity_labels: dict[str, str] | None = None,
     field_labels: dict[str, str] | None = None,
     scale_dx: dict[str, float] | None = None,
+    with_instructions: bool = False,
+    section_title: str = "1. INFORMATIONS DE BASE",
 ) -> pymupdf.Document:
     source_doc = pymupdf.open(source)
     doc = pymupdf.open(source)
@@ -462,9 +562,19 @@ def build_form(
     scale_dx = scale_dx or {}
 
     # ------------------------------------------------------------------ page 1 section 1
-    shifts = relayout_pages(doc, source_doc, identity_section_end())
+    shifts = relayout_pages(
+        doc,
+        source_doc,
+        identity_section_end(with_instructions),
+        redact_from=INTRO_END_Y if with_instructions else 174.6,
+    )
     source_doc.close()
-    identity, _section1_end = draw_identity_section(p0, labels=identity_labels)
+    identity, _section1_end = draw_identity_section(
+        p0,
+        labels=identity_labels,
+        with_instructions=with_instructions,
+        section_title=section_title,
+    )
     s2, s3, d2 = shifts["s2_dy"], shifts["s3_dy"], shifts["p2_dy"]
     id_l = identity_labels or IDENTITY_LABELS_FR
 
@@ -865,15 +975,24 @@ def build_form(
         multiline=True,
         tooltip="Autre chose a savoir pour adapter l'accompagnement",
     )
-    add_text(p3, "confirmation_nom", R(75.0, 378.65, 462.5, 390.45), tooltip="Nom")
-    add_signature(p3, "signature", R(95.3, 394.8, 482.8, 412.5), tooltip="Signature")
-    add_text(p3, "date", R(74.5, 416.65, 462.0, 428.45), tooltip="Date")
+    confirm = draw_signature_block(p3)
+    add_text(
+        p3,
+        "confirmation_nom",
+        confirm["confirmation_nom"],
+        tooltip="Nom",
+        boxed=True,
+        fontsize=9,
+    )
+    add_text(p3, "date", confirm["date"], tooltip="Date", boxed=True, fontsize=9)
 
     if field_labels:
         apply_field_labels(doc, field_labels)
     finalize_radio_groups(doc, groups)
     output.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(output, garbage=4, deflate=True, pretty=False)
+    # garbage>=3 merges identical empty /AP streams across fields. After the
+    # client types a value, a shared appearance can blank or mix answers.
+    doc.save(output, garbage=2, deflate=True, pretty=False)
     return doc
 
 
@@ -882,7 +1001,7 @@ def main() -> None:
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
-    doc = build_form(args.source, args.output)
+    doc = build_form(args.source, args.output, with_instructions=True)
     counts = [len(list(page.widgets() or [])) for page in doc]
     doc.close()
     print(f"Wrote {args.output}")

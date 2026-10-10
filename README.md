@@ -14,9 +14,15 @@ Le PDF original reste la couche visuelle de référence pour les sections 2 à 9
 | `scripts/add_acroform_fields.py` | Génère le PDF français remplissable |
 | `scripts/build_english_form.py` | Traduit le visuel puis génère le PDF anglais remplissable |
 
-## Utilisation
+## Utilisation (version française)
 
-Envoyer le PDF de la langue voulue aux clients. Ils peuvent le remplir dans **Adobe Acrobat Reader**, l'enregistrer, puis le retourner.
+Envoyer `Elevate-Formulaire-Evaluation-Client-remplissable.pdf` par courriel. Le client :
+
+1. Télécharge le PDF et l'ouvre dans **Adobe Acrobat Reader** (ordinateur de préférence).
+2. Remplit les champs, puis ajoute sa signature avec l'outil **Remplir et signer**.
+3. Choisit **Enregistrer une copie**, ferme le fichier, le rouvre pour vérifier, puis le renvoie en pièce jointe.
+
+Ne pas compter sur le visualiseur PDF de Chrome, de Gmail, d'iMessage ou des apps Fichiers iOS/Android pour enregistrer le formulaire : ces lecteurs ignorent souvent les apparences AcroForm. Adobe Acrobat Reader (desktop ou application mobile) est le lecteur pris en charge.
 
 ## Régénérer les PDF remplissables
 
