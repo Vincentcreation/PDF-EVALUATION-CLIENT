@@ -110,33 +110,49 @@ def _draw_field_box(page: pymupdf.Page, rect: pymupdf.Rect) -> pymupdf.Rect:
     )
 
 
-def draw_identity_section(page: pymupdf.Page) -> tuple[dict[str, pymupdf.Rect], float]:
+IDENTITY_LABELS_FR = {
+    "nom_complet": "Nom complet",
+    "courriel": "Courriel",
+    "telephone": "Téléphone",
+    "date_naissance": "Date de naissance (JJ/MM/AAAA)",
+    "age": "Âge",
+    "profession": "Profession / rythme de travail",
+    "taille": "Taille",
+    "poids_actuel": "Poids actuel",
+    "poids_vise": "Poids visé (facultatif)",
+}
+
+
+def draw_identity_section(
+    page: pymupdf.Page, labels: dict[str, str] | None = None
+) -> tuple[dict[str, pymupdf.Rect], float]:
     """Redraw section 1 with labels above boxed fields. Returns widget rects and end y."""
+    labels = labels or IDENTITY_LABELS_FR
     y = 178.0
     rects: dict[str, pymupdf.Rect] = {}
 
-    _draw_label(page, MARGIN_LEFT, y, "Nom complet")
+    _draw_label(page, MARGIN_LEFT, y, labels["nom_complet"])
     y += LABEL_BAND + LABEL_TO_FIELD
     rects["nom_complet"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, FIELD_H))
     y += FIELD_H + ROW_GAP
 
-    _draw_label(page, MARGIN_LEFT, y, "Courriel")
+    _draw_label(page, MARGIN_LEFT, y, labels["courriel"])
     y += LABEL_BAND + LABEL_TO_FIELD
     rects["courriel"] = _draw_field_box(page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, FIELD_H))
     y += FIELD_H + ROW_GAP
 
     (tel_x0, tel_x1), (dob_x0, dob_x1), (age_x0, age_x1) = _columns([0.42, 0.40, 0.18])
     row_y = y
-    _draw_label(page, tel_x0, row_y, "Téléphone")
-    _draw_label(page, dob_x0, row_y, "Date de naissance (JJ/MM/AAAA)")
-    _draw_label(page, age_x0, row_y, "Âge")
+    _draw_label(page, tel_x0, row_y, labels["telephone"])
+    _draw_label(page, dob_x0, row_y, labels["date_naissance"])
+    _draw_label(page, age_x0, row_y, labels["age"])
     y += LABEL_BAND + LABEL_TO_FIELD
     rects["telephone"] = _draw_field_box(page, _field_rect(tel_x0, tel_x1, y, FIELD_H))
     rects["date_naissance"] = _draw_field_box(page, _field_rect(dob_x0, dob_x1, y, FIELD_H))
     rects["age"] = _draw_field_box(page, _field_rect(age_x0, age_x1, y, FIELD_H))
     y += FIELD_H + ROW_GAP
 
-    _draw_label(page, MARGIN_LEFT, y, "Profession / rythme de travail")
+    _draw_label(page, MARGIN_LEFT, y, labels["profession"])
     y += LABEL_BAND + LABEL_TO_FIELD
     rects["profession"] = _draw_field_box(
         page, _field_rect(MARGIN_LEFT, MARGIN_RIGHT, y, PROFESSION_H)
@@ -145,9 +161,9 @@ def draw_identity_section(page: pymupdf.Page) -> tuple[dict[str, pymupdf.Rect], 
 
     (t_x0, t_x1), (p_x0, p_x1), (v_x0, v_x1) = _columns([1 / 3, 1 / 3, 1 / 3])
     row_y = y
-    _draw_label(page, t_x0, row_y, "Taille")
-    _draw_label(page, p_x0, row_y, "Poids actuel")
-    _draw_label(page, v_x0, row_y, "Poids visé (facultatif)")
+    _draw_label(page, t_x0, row_y, labels["taille"])
+    _draw_label(page, p_x0, row_y, labels["poids_actuel"])
+    _draw_label(page, v_x0, row_y, labels["poids_vise"])
     y += LABEL_BAND + LABEL_TO_FIELD
     rects["taille"] = _draw_field_box(page, _field_rect(t_x0, t_x1, y, FIELD_H))
     rects["poids_actuel"] = _draw_field_box(page, _field_rect(p_x0, p_x1, y, FIELD_H))
@@ -402,6 +418,7 @@ def add_scale(
     group: str,
     digits: list[tuple[str, float, float, float, float]],
     tooltip: str,
+    dx: float = 0.0,
 ) -> None:
     for value, x0, y0, x1, y1 in digits:
         add_radio_option(
@@ -409,12 +426,29 @@ def add_scale(
             groups,
             group,
             value,
-            scale_box(x0, y0, x1, y1),
+            scale_box(x0 + dx, y0, x1 + dx, y1),
             tooltip=f"{tooltip} : {value}",
         )
 
 
-def build_form(source: Path, output: Path) -> pymupdf.Document:
+def apply_field_labels(doc: pymupdf.Document, labels: dict[str, str]) -> None:
+    """Override widget tooltips/labels after widgets are created."""
+    for page in doc:
+        for widget in page.widgets() or []:
+            name = widget.field_name
+            if name in labels:
+                widget.field_label = labels[name]
+                widget.update()
+
+
+def build_form(
+    source: Path,
+    output: Path,
+    *,
+    identity_labels: dict[str, str] | None = None,
+    field_labels: dict[str, str] | None = None,
+    scale_dx: dict[str, float] | None = None,
+) -> pymupdf.Document:
     source_doc = pymupdf.open(source)
     doc = pymupdf.open(source)
     if doc.page_count != 4:
@@ -425,40 +459,42 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
 
     groups: dict[str, list[tuple[int, str]]] = {}
     p0, p1, p2, p3 = doc[0], doc[1], doc[2], doc[3]
+    scale_dx = scale_dx or {}
 
     # ------------------------------------------------------------------ page 1 section 1
     shifts = relayout_pages(doc, source_doc, identity_section_end())
     source_doc.close()
-    identity, _section1_end = draw_identity_section(p0)
+    identity, _section1_end = draw_identity_section(p0, labels=identity_labels)
     s2, s3, d2 = shifts["s2_dy"], shifts["s3_dy"], shifts["p2_dy"]
+    id_l = identity_labels or IDENTITY_LABELS_FR
 
     boxed = dict(boxed=True, fontsize=9)
-    add_text(p0, "nom_complet", identity["nom_complet"], tooltip="Nom complet", **boxed)
-    add_text(p0, "courriel", identity["courriel"], tooltip="Courriel", **boxed)
-    add_text(p0, "telephone", identity["telephone"], tooltip="Téléphone", **boxed)
+    add_text(p0, "nom_complet", identity["nom_complet"], tooltip=id_l["nom_complet"], **boxed)
+    add_text(p0, "courriel", identity["courriel"], tooltip=id_l["courriel"], **boxed)
+    add_text(p0, "telephone", identity["telephone"], tooltip=id_l["telephone"], **boxed)
     add_text(
         p0,
         "date_naissance",
         identity["date_naissance"],
-        tooltip="Date de naissance (JJ/MM/AAAA)",
+        tooltip=id_l["date_naissance"],
         **boxed,
     )
-    add_text(p0, "age", identity["age"], tooltip="Âge", **boxed)
+    add_text(p0, "age", identity["age"], tooltip=id_l["age"], **boxed)
     add_text(
         p0,
         "profession",
         identity["profession"],
         multiline=True,
-        tooltip="Profession / rythme de travail",
+        tooltip=id_l["profession"],
         **boxed,
     )
-    add_text(p0, "taille", identity["taille"], tooltip="Taille", **boxed)
-    add_text(p0, "poids_actuel", identity["poids_actuel"], tooltip="Poids actuel", **boxed)
+    add_text(p0, "taille", identity["taille"], tooltip=id_l["taille"], **boxed)
+    add_text(p0, "poids_actuel", identity["poids_actuel"], tooltip=id_l["poids_actuel"], **boxed)
     add_text(
         p0,
         "poids_vise",
         identity["poids_vise"],
-        tooltip="Poids visé (facultatif)",
+        tooltip=id_l["poids_vise"],
         **boxed,
     )
 
@@ -513,6 +549,7 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
             ("10", 245.25, shift_y(497.41, s2), 255.26, shift_y(509.80, s2)),
         ],
         "Niveau d'engagement actuel",
+        dx=scale_dx.get("engagement", 0.0),
     )
 
     add_radio_option(p1, groups, "niveau", "debutant", square(48.52, shift_y(558.00, s3)), tooltip="Debutant")
@@ -710,6 +747,7 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
             ("10", 359.69, 345.72, 369.69, 358.11),
         ],
         "Qualite du sommeil",
+        dx=scale_dx.get("sommeil_qualite", 0.0),
     )
     add_scale(
         p2,
@@ -728,6 +766,7 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
             ("10", 363.20, 361.72, 373.20, 374.11),
         ],
         "Niveau de stress general",
+        dx=scale_dx.get("stress", 0.0),
     )
 
     add_radio_option(
@@ -830,6 +869,8 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
     add_signature(p3, "signature", R(95.3, 394.8, 482.8, 412.5), tooltip="Signature")
     add_text(p3, "date", R(74.5, 416.65, 462.0, 428.45), tooltip="Date")
 
+    if field_labels:
+        apply_field_labels(doc, field_labels)
     finalize_radio_groups(doc, groups)
     output.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output, garbage=4, deflate=True, pretty=False)
