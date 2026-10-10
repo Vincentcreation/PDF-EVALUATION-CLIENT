@@ -2,7 +2,7 @@
 
 Formulaire d'évaluation client **Elevate Fitness**, version PDF remplissable.
 
-Le PDF original reste la couche visuelle exacte. Les champs AcroForm sont uniquement superposés sur les lignes, cases et échelles déjà présentes.
+Le PDF original reste la couche visuelle de référence. Les champs AcroForm sont superposés sur les lignes, cases et échelles déjà présentes. La rangée **Date de naissance** et **Âge** est ajoutée dans la section Informations de base.
 
 ## Fichiers
 
@@ -25,4 +25,4 @@ pip install -r requirements.txt
 python scripts/add_acroform_fields.py
 ```
 
-Le script ne redessine pas le document : il ouvre le PDF original et y ajoute uniquement des champs AcroForm.
+Le script ouvre le PDF original, insère les libellés Date de naissance / Âge, puis ajoute les champs AcroForm.

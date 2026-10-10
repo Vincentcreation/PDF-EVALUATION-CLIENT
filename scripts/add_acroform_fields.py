@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Add AcroForm fields on top of the original Elevate Fitness client form.
 
-The original PDF is kept as the exact visual layer. This script only overlays
-interactive fields aligned on the printed lines, squares and 1-10 scales.
+The original PDF is kept as the visual layer. This script overlays interactive
+fields aligned on the printed lines, squares and 1-10 scales, and inserts the
+Date de naissance / Age row into section 1 so those fields are visible.
 """
 
 from __future__ import annotations
@@ -49,6 +50,67 @@ def scale_box(x0: float, y0: float, x1: float, y1: float) -> pymupdf.Rect:
     half_w = max((x1 - x0) / 2.0 + 0.9, 4.55)
     half_h = 4.55
     return pymupdf.Rect(cx - half_w, cy - half_h, cx + half_w, cy + half_h)
+
+
+LABEL_SIZE = 8.5
+LABEL_BASELINE_OFFSET = 9.06  # Helvetica-Bold 8.5 vs original span y0
+
+
+def _cover(page: pymupdf.Page, rect: pymupdf.Rect) -> None:
+    page.draw_rect(rect, color=None, fill=(1, 1, 1), width=0)
+
+
+def _insert_label(page: pymupdf.Page, x: float, span_y0: float, text: str) -> float:
+    baseline = span_y0 + LABEL_BASELINE_OFFSET
+    page.insert_text(
+        (x, baseline),
+        text,
+        fontsize=LABEL_SIZE,
+        fontname="hebo",
+        color=(0, 0, 0),
+    )
+    return pymupdf.get_text_length(text, fontname="hebo", fontsize=LABEL_SIZE)
+
+
+def _insert_underscores(page: pymupdf.Page, x0: float, x1: float, span_y0: float) -> None:
+    baseline = span_y0 + LABEL_BASELINE_OFFSET
+    width = max(0.0, x1 - x0)
+    char_w = pymupdf.get_text_length("_", fontname="helv", fontsize=LABEL_SIZE)
+    count = max(1, int(width / char_w))
+    page.insert_text(
+        (x0, baseline),
+        "_" * count,
+        fontsize=LABEL_SIZE,
+        fontname="helv",
+        color=(0, 0, 0),
+    )
+
+
+def insert_birthdate_age_row(page: pymupdf.Page) -> None:
+    """Add visible Date de naissance / Age labels on the unused profession-label line.
+
+    Profession stays on the line below, now in the same label+underline pattern as
+    Nom complet / Courriel / Telephone.
+    """
+    page.add_redact_annot(pymupdf.Rect(48.4, 226.3, 175.0, 239.6), fill=(1, 1, 1))
+    page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
+    _cover(page, pymupdf.Rect(48.4, 237.2, 438.0, 251.0))
+
+    dob_y0 = 227.44
+    w_dob = _insert_label(page, 48.52, dob_y0, "Date de naissance :")
+    dob_line_x0 = 48.52 + w_dob + 4.0
+    dob_line_x1 = 338.0
+    _insert_underscores(page, dob_line_x0, dob_line_x1, 227.40)
+
+    age_x = 352.0
+    w_age = _insert_label(page, age_x, dob_y0, "Âge :")
+    age_line_x0 = age_x + w_age + 8.0
+    age_line_x1 = 531.0
+    _insert_underscores(page, age_line_x0, age_line_x1, 227.40)
+
+    prof_y0 = 238.44
+    w_prof = _insert_label(page, 48.52, prof_y0, "Profession / rythme de travail :")
+    _insert_underscores(page, 48.52 + w_prof + 4.0, 497.45, 238.40)
 
 
 def add_text(
@@ -258,13 +320,21 @@ def build_form(source: Path, output: Path) -> pymupdf.Document:
     p0, p1, p2, p3 = doc[0], doc[1], doc[2], doc[3]
 
     # ------------------------------------------------------------------ page 1
+    insert_birthdate_age_row(p0)
     add_text(p0, "nom_complet", R(109.9, 176.35, 497.5, 188.15), tooltip="Nom complet")
     add_text(p0, "courriel", R(88.7, 193.35, 476.2, 205.15), tooltip="Courriel")
     add_text(p0, "telephone", R(98.6, 210.35, 486.1, 222.15), tooltip="Telephone")
     add_text(
         p0,
+        "date_naissance",
+        R(131.9, 227.35, 338.0, 239.15),
+        tooltip="Date de naissance",
+    )
+    add_text(p0, "age", R(376.1, 227.35, 531.0, 239.15), tooltip="Âge")
+    add_text(
+        p0,
         "profession",
-        R(48.5, 238.35, 436.1, 250.15),
+        R(176.8, 238.35, 497.5, 250.15),
         tooltip="Profession / rythme de travail",
     )
     add_text(p0, "taille", R(77.8, 255.35, 172.3, 267.15), tooltip="Taille")
