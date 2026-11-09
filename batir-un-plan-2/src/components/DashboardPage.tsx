@@ -2,7 +2,7 @@ import { useApp } from '../store/AppContext';
 import {
   calculateTargets, calculateBMR, calculateTDEE,
   GOAL_LABELS, GOAL_MULTIPLIERS, GOAL_COLORS, MACRO_PRESETS,
-  DEFAULT_PROTEIN_GKG,
+  DEFAULT_PROTEIN_GKG, DEFAULT_MACRO_PRESET,
 } from '../utils/calculations';
 import type { GoalType, NutritionalPlan, MacroPresetKey } from '../types';
 import { v4 } from '../utils/uuid';
@@ -23,10 +23,10 @@ export default function DashboardPage() {
   const tdee = Math.round(calculateTDEE(activeProfile));
 
   const goalType = activePlan?.goalType ?? 'maintien';
-  const macroPreset = (activePlan?.macroPreset ?? 'equilibre') as MacroPresetKey;
+  const macroPreset = (activePlan?.macroPreset ?? DEFAULT_MACRO_PRESET) as MacroPresetKey;
   const macroDistrib = activePlan?.macroDistribution ?? MACRO_PRESETS[macroPreset];
-  const proteinMode = activePlan?.proteinMode ?? 'pct';
-  const proteinGkg  = activePlan?.proteinGkg  ?? DEFAULT_PROTEIN_GKG[goalType];
+  const proteinMode = activePlan?.proteinMode ?? 'gkg';
+  const proteinGkg  = activePlan?.proteinGkg  ?? DEFAULT_PROTEIN_GKG;
   const targets = calculateTargets(activeProfile, macroDistrib, goalType, proteinMode, proteinGkg, activePlan?.customKcal);
 
   const trainingTotals = activePlan ? computeBankTotals(activePlan.joursEntrainement.foodBank) : null;
@@ -36,15 +36,15 @@ export default function DashboardPage() {
   const profilePlans = plans.filter(p => p.profileId === activeProfile.id);
 
   function createPlan(goal: GoalType) {
-    const macros = MACRO_PRESETS.equilibre;
+    const macros = MACRO_PRESETS[DEFAULT_MACRO_PRESET];
     const newPlan: NutritionalPlan = {
       id: v4(),
       nom: `Plan ${GOAL_LABELS[goal]} — ${activeProfile!.nom}`,
       profileId: activeProfile!.id,
       goalType: goal,
-      proteinMode: 'pct',
-      proteinGkg: DEFAULT_PROTEIN_GKG[goal],
-      macroPreset: 'equilibre',
+      proteinMode: 'gkg',
+      proteinGkg: DEFAULT_PROTEIN_GKG,
+      macroPreset: DEFAULT_MACRO_PRESET,
       macroDistribution: macros,
       joursEntrainement: {
         type: 'entrainement',

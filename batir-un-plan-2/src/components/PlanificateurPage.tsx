@@ -4,9 +4,9 @@ import type { DayType, FoodCategory, MealSlot, DistributionMode, DayPlan } from 
 import {
   FOOD_ITEMS, FOOD_CATEGORIES, CATEGORY_LABELS, MEAL_SLOT_LABELS, MEAL_SLOTS,
   computeBankTotals, getSelectedItem,
-  distributeClassique, distributeEntrainement, distributeEquilibree, portionMapToMeals,
+  distributeClassique, distributePerformance, distributeEquilibree, portionMapToMeals,
 } from '../utils/foodBank';
-import { calculateBaseHydration, calculateTargets, MACRO_PRESETS } from '../utils/calculations';
+import { calculateBaseHydration, calculateTargets, MACRO_PRESETS, DEFAULT_MACRO_PRESET } from '../utils/calculations';
 import type { MacroPresetKey } from '../types';
 import { AlertCircle, Dumbbell, Bed, Shuffle, Droplets, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -21,11 +21,11 @@ export default function PlanificateurPage() {
     ? activePlan.joursEntrainement
     : activePlan.joursRepos;
 
-  const macroPreset = (activePlan.macroPreset as MacroPresetKey) ?? 'equilibre';
+  const macroPreset = (activePlan.macroPreset as MacroPresetKey) ?? DEFAULT_MACRO_PRESET;
   const macroDistrib = activePlan.macroDistribution ?? MACRO_PRESETS[macroPreset];
   const targets = calculateTargets(activeProfile, macroDistrib, activePlan.goalType, activePlan.proteinMode, activePlan.proteinGkg, activePlan.customKcal);
   const bankTotals = computeBankTotals(dayPlan.foodBank);
-  const baseHydration = calculateBaseHydration(activeProfile, activeDay === 'entrainement');
+  const baseHydration = calculateBaseHydration(targets.targetKcal);
 
   function updateDay(patch: Partial<DayPlan>) {
     const field = activeDay === 'entrainement' ? 'joursEntrainement' : 'joursRepos';
@@ -47,8 +47,8 @@ export default function PlanificateurPage() {
 
   function applyDistribution(mode: DistributionMode) {
     let portionMap;
-    if (mode === 'classique') portionMap = distributeClassique(dayPlan.foodBank);
-    else if (mode === 'entrainement') portionMap = distributeEntrainement(dayPlan.foodBank, 'matin');
+    if (mode === 'classique')     portionMap = distributeClassique(dayPlan.foodBank);
+    else if (mode === 'performance') portionMap = distributePerformance(dayPlan.foodBank);
     else portionMap = distributeEquilibree(dayPlan.foodBank);
     updateDay({ distributionMode: mode, meals: portionMapToMeals(portionMap) });
   }
@@ -186,12 +186,12 @@ export default function PlanificateurPage() {
           <h2 className="text-sm font-semibold text-zinc-200">Répartition sur 6 repas</h2>
           <div className="flex gap-2 flex-wrap">
             <p className="text-xs text-zinc-500 flex items-center gap-1.5"><Shuffle size={12} /> Répartition automatique :</p>
-            {(['classique', 'entrainement', 'equilibree'] as DistributionMode[]).map(m => (
+            {(['classique', 'performance', 'equilibree'] as DistributionMode[]).map(m => (
               <button key={m} onClick={() => applyDistribution(m)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   dayPlan.distributionMode === m ? 'bg-gold/10 border-gold/40 text-gold' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                 }`}>
-                {m === 'classique' ? 'Classique' : m === 'entrainement' ? 'Selon entraînement' : 'Équilibrée'}
+                {m === 'classique' ? 'Classique' : m === 'performance' ? 'Performance' : 'Équilibrée'}
               </button>
             ))}
           </div>

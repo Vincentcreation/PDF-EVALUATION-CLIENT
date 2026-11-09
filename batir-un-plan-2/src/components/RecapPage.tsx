@@ -47,8 +47,8 @@ export default function RecapPage() {
 
   const weightKg  = getWeightKg(activeProfile).toFixed(1);
   const heightCm  = getHeightCm(activeProfile).toFixed(0);
-  const hydTraining = calculateBaseHydration(activeProfile, true)  + (activePlan.joursEntrainement.hydratation.manuel ?? 0);
-  const hydRepos    = calculateBaseHydration(activeProfile, false) + (activePlan.joursRepos.hydratation.manuel ?? 0);
+  const hydTraining = calculateBaseHydration(targets.targetKcal) + (activePlan.joursEntrainement.hydratation.manuel ?? 0);
+  const hydRepos    = calculateBaseHydration(targets.targetKcal) + (activePlan.joursRepos.hydratation.manuel ?? 0);
 
   async function handleExportPDF() {
     if (!printRef.current) return;

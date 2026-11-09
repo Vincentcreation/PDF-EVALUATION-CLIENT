@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../store/AppContext';
-import { MACRO_PRESETS, DEFAULT_PROTEIN_GKG, PROTEIN_GKG_MIN, PROTEIN_GKG_MAX, calculateTargets, getWeightKg } from '../utils/calculations';
+import { MACRO_PRESETS, DEFAULT_MACRO_PRESET, DEFAULT_PROTEIN_GKG, PROTEIN_GKG_MIN, PROTEIN_GKG_MAX, DEFAULT_PROTEIN_PCT, PROTEIN_PCT_MIN, PROTEIN_PCT_MAX, calculateTargets, getWeightKg } from '../utils/calculations';
 import type { MacroPresetKey } from '../types';
 import type { MacroDistribution, ProteinMode } from '../types';
 import { AlertCircle } from 'lucide-react';
@@ -8,10 +8,11 @@ import { AlertCircle } from 'lucide-react';
 export default function MacrosPage() {
   const { activeProfile, activePlan, savePlanAndSelect } = useApp();
 
-  const [preset, setPreset]       = useState<MacroPresetKey>((activePlan?.macroPreset as MacroPresetKey) ?? 'equilibre');
-  const [distrib, setDistrib]     = useState<MacroDistribution>(activePlan?.macroDistribution ?? MACRO_PRESETS.equilibre);
-  const [proteinMode, setProteinMode] = useState<ProteinMode>(activePlan?.proteinMode ?? 'pct');
-  const [proteinGkg, setProteinGkg]   = useState(activePlan?.proteinGkg ?? DEFAULT_PROTEIN_GKG[activePlan?.goalType ?? 'maintien']);
+  const [preset, setPreset]       = useState<MacroPresetKey>((activePlan?.macroPreset as MacroPresetKey) ?? DEFAULT_MACRO_PRESET);
+  const [distrib, setDistrib]     = useState<MacroDistribution>(activePlan?.macroDistribution ?? MACRO_PRESETS[DEFAULT_MACRO_PRESET]);
+  const [proteinMode, setProteinMode] = useState<ProteinMode>(activePlan?.proteinMode ?? 'gkg');
+  const [proteinGkg, setProteinGkg]   = useState(activePlan?.proteinGkg ?? DEFAULT_PROTEIN_GKG);
+  const [proteinPct, setProteinPct]   = useState(activePlan?.macroDistribution?.proteines ?? DEFAULT_PROTEIN_PCT);
 
   useEffect(() => {
     if (activePlan) {
@@ -19,6 +20,7 @@ export default function MacrosPage() {
       setDistrib(activePlan.macroDistribution);
       setProteinMode(activePlan.proteinMode);
       setProteinGkg(activePlan.proteinGkg);
+      setProteinPct(activePlan.macroDistribution?.proteines ?? DEFAULT_PROTEIN_PCT);
     }
   }, [activePlan?.id]);
 
@@ -26,7 +28,11 @@ export default function MacrosPage() {
   if (!activePlan)    return <EmptyState msg="Aucun plan actif. Créez un plan depuis le tableau de bord." />;
 
   const weightKg = getWeightKg(activeProfile);
-  const targets  = calculateTargets(activeProfile, distrib, activePlan.goalType, proteinMode, proteinGkg, activePlan.customKcal);
+  // For pct mode, inject proteinPct into the distrib for target calc
+  const distribForCalc: MacroDistribution = proteinMode === 'pct'
+    ? { ...distrib, proteines: proteinPct }
+    : distrib;
+  const targets  = calculateTargets(activeProfile, distribForCalc, activePlan.goalType, proteinMode, proteinGkg, activePlan.customKcal);
   const total    = distrib.proteines + distrib.glucides + distrib.lipides;
   const isValid  = total === 100;
 
@@ -52,10 +58,12 @@ export default function MacrosPage() {
   }
 
   function saveChanges() {
+    // For pct mode, store proteinPct in the distribution
+    const finalDistrib = proteinMode === 'pct' ? { ...distrib, proteines: proteinPct } : distrib;
     savePlanAndSelect({
       ...activePlan!,
       macroPreset: preset,
-      macroDistribution: distrib,
+      macroDistribution: finalDistrib,
       proteinMode,
       proteinGkg,
       updatedAt: new Date().toISOString(),
@@ -86,8 +94,8 @@ export default function MacrosPage() {
         {proteinMode === 'gkg' && (
           <div>
             <label className="block text-xs text-zinc-400 mb-2">
-              Protéines: <span className="text-gold font-semibold">{proteinGkg} g/kg</span>
-              {' '}= {Math.round(proteinGkg * weightKg)} g/jour ({Math.round(weightKg)} kg)
+              Protéines: <span className="text-gold font-semibold">{proteinGkg.toFixed(1)} g/kg</span>
+              {' '}= <span className="text-zinc-200 font-medium">{Math.round(proteinGkg * weightKg)} g/jour</span> ({Math.round(weightKg)} kg)
             </label>
             <input type="range"
               min={PROTEIN_GKG_MIN} max={PROTEIN_GKG_MAX} step={0.1}
@@ -96,8 +104,26 @@ export default function MacrosPage() {
               className="w-full accent-yellow-500"
             />
             <div className="flex justify-between text-xs text-zinc-600 mt-1">
-              <span>{PROTEIN_GKG_MIN} g/kg</span>
-              <span>{PROTEIN_GKG_MAX} g/kg</span>
+              <span>min {PROTEIN_GKG_MIN} g/kg</span>
+              <span>max {PROTEIN_GKG_MAX} g/kg</span>
+            </div>
+          </div>
+        )}
+        {proteinMode === 'pct' && (
+          <div>
+            <label className="block text-xs text-zinc-400 mb-2">
+              Protéines: <span className="text-gold font-semibold">{proteinPct}%</span>
+              {' '}= <span className="text-zinc-200 font-medium">{Math.round(targets.proteinesG)} g/jour</span>
+            </label>
+            <input type="range"
+              min={PROTEIN_PCT_MIN} max={PROTEIN_PCT_MAX} step={1}
+              value={proteinPct}
+              onChange={e => setProteinPct(+e.target.value)}
+              className="w-full accent-yellow-500"
+            />
+            <div className="flex justify-between text-xs text-zinc-600 mt-1">
+              <span>min {PROTEIN_PCT_MIN}%</span>
+              <span>max {PROTEIN_PCT_MAX}%</span>
             </div>
           </div>
         )}

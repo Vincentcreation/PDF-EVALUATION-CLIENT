@@ -34,16 +34,16 @@ export type MealSlot =
 /** Day type */
 export type DayType = 'entrainement' | 'repos';
 
-/** Macro preset keys — 8 presets + custom */
+/** Macro preset keys — 8 presets + custom (matches original HTML) */
 export type MacroPresetKey =
-  | 'equilibre'
-  | 'deficit_std'
-  | 'lowcarb'
-  | 'highprotein'
-  | 'prisedeMasse'
-  | 'cetogene'
-  | 'endurance'
-  | 'force'
+  | 'perteLegere'
+  | 'perteSevere'
+  | 'maintienP'
+  | 'equilibreP'
+  | 'priseLegere'
+  | 'priseSevere'
+  | 'performanceP'
+  | 'lipidesReduits'
   | 'custom';
 
 /** Food bank category */
@@ -57,7 +57,7 @@ export type FoodCategory =
   | 'whey';
 
 /** Automatic distribution mode */
-export type DistributionMode = 'classique' | 'entrainement' | 'equilibree';
+export type DistributionMode = 'classique' | 'performance' | 'equilibree';
 
 /** Plan validation status */
 export type PlanStatus = 'ok' | 'warn' | 'error';
