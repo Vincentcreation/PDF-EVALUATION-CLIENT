@@ -3,6 +3,7 @@ import type {
   NutritionalTargets,
   MacroDistribution,
   GoalType,
+  DayType,
   ActivityLevel,
   MacroPresetKey,
   ProteinMode,
@@ -220,28 +221,119 @@ export function calculateBaseHydration(targetKcal: number): number {
   return Math.round(litres * 1000); // return ml
 }
 
-// ─── Plan validation ──────────────────────────────────────────────────────────
+// ─── Day-specific targets (applies carb cycling for rest day) ─────────────────
+export function calculateTargetsForDay(
+  profile: Profile,
+  macros: MacroDistribution,
+  goal: GoalType,
+  dayType: DayType,
+  proteinMode: ProteinMode,
+  proteinGkg: number,
+  customKcal?: number,
+): NutritionalTargets {
+  const dayMacros = dayType === 'repos' ? applyRestDayMacros(macros) : macros;
+  return calculateTargets(profile, dayMacros, goal, proteinMode, proteinGkg, customKcal);
+}
+
+// ─── Hydration from bank kcal ─────────────────────────────────────────────────
+// When bank is non-empty use bank kcal; otherwise use target kcal.
+export function calculateHydration(bankKcal: number, targetKcal: number, manuelMl: number): {
+  base: number; total: number;
+} {
+  const refKcal = bankKcal > 0 ? bankKcal : targetKcal;
+  const base = calculateBaseHydration(refKcal);
+  return { base, total: base + manuelMl };
+}
+
+// ─── Auto-calculate bank from targets ─────────────────────────────────────────
+// Greedy algorithm: protein → fat → starch, with fixed minimums for veg/fruit/dairy
+export function autoCalculateBank(
+  targets: NutritionalTargets,
+): Record<string, number> {
+  // These imports are inline to avoid circular dep
+  const avg = {
+    proteines: { p: 9,  g: 0,  l: 2  },
+    feculent:  { p: 3,  g: 18, l: 1  },
+    legumes:   { p: 2,  g: 7,  l: 0  },
+    fruits:    { p: 1,  g: 15, l: 2  },
+    laitiers:  { p: 7,  g: 10, l: 2  },
+    graisses:  { p: 1,  g: 2,  l: 6  },
+    whey:      { p: 22, g: 2,  l: 2  },
+  };
+
+  // Fixed minimums
+  const r = { proteines: 0, feculent: 0, legumes: 2, fruits: 2, laitiers: 1, graisses: 0, whey: 0 };
+
+  let remP = targets.proteinesG
+    - avg.legumes.p * r.legumes - avg.fruits.p * r.fruits - avg.laitiers.p * r.laitiers;
+  let remG = targets.glucidesG
+    - avg.legumes.g * r.legumes - avg.fruits.g * r.fruits - avg.laitiers.g * r.laitiers;
+  let remL = targets.lipidesG
+    - avg.legumes.l * r.legumes - avg.fruits.l * r.fruits - avg.laitiers.l * r.laitiers;
+
+  // Protein portions
+  r.proteines = Math.max(1, Math.round(remP / avg.proteines.p));
+  remP -= avg.proteines.p * r.proteines;
+  remG -= avg.proteines.g * r.proteines;
+  remL -= avg.proteines.l * r.proteines;
+
+  // Fat portions
+  r.graisses = Math.max(0, Math.round(remL / avg.graisses.l));
+  remG -= avg.graisses.g * r.graisses;
+
+  // Starch from remaining glucides
+  r.feculent = Math.max(0, Math.round(remG / avg.feculent.g));
+
+  return r;
+}
+
+// ─── Plan validation (absolute tolerances: 50 kcal, 5 g macros) ──────────────
 type PlanStatus = 'ok' | 'warn' | 'error';
+
+export interface ValidationResult {
+  status: PlanStatus;
+  messages: string[];
+  bankEmpty: boolean;
+  mealsEmpty: boolean;
+}
 
 export function validatePlan(
   actualKcal: number, targetKcal: number,
   actualP: number, targetP: number,
   actualG: number, targetG: number,
   actualL: number, targetL: number,
-): { status: PlanStatus; messages: string[] } {
+  bankEmpty?: boolean,
+  mealsEmpty?: boolean,
+): ValidationResult {
   const messages: string[] = [];
-  const pct = (a: number, t: number) => t > 0 ? Math.abs(a - t) / t * 100 : 0;
-  const kPct = pct(actualKcal, targetKcal);
-  const pPct = pct(actualP, targetP);
-  const gPct = pct(actualG, targetG);
-  const lPct = pct(actualL, targetL);
 
-  if (kPct > 15)      messages.push(`Calories: écart ${kPct.toFixed(0)}%`);
-  else if (kPct > 10) messages.push(`Calories: légèrement hors cible (${kPct.toFixed(0)}%)`);
-  if (pPct > 15)  messages.push(`Protéines: écart ${pPct.toFixed(0)}%`);
-  if (gPct > 15)  messages.push(`Glucides: écart ${gPct.toFixed(0)}%`);
-  if (lPct > 15)  messages.push(`Lipides: écart ${lPct.toFixed(0)}%`);
+  if (bankEmpty) {
+    messages.push('Banque d\'équivalents vide — entrez des portions pour chaque catégorie.');
+    return { status: 'error', messages, bankEmpty: true, mealsEmpty: mealsEmpty ?? false };
+  }
 
-  const status: PlanStatus = kPct > 15 || pPct > 15 ? 'error' : kPct > 10 ? 'warn' : 'ok';
-  return { status, messages };
+  const dK = Math.abs(actualKcal - targetKcal);
+  const dP = Math.abs(actualP - targetP);
+  const dG = Math.abs(actualG - targetG);
+  const dL = Math.abs(actualL - targetL);
+
+  if (dK > 100) messages.push(`Calories : écart de ${Math.round(dK)} kcal`);
+  else if (dK > 50) messages.push(`Calories : légèrement hors cible (${Math.round(dK)} kcal)`);
+
+  if (dP > 10)  messages.push(`Protéines : écart de ${Math.round(dP)} g`);
+  else if (dP > 5) messages.push(`Protéines : légèrement hors cible (${Math.round(dP)} g)`);
+
+  if (dG > 10)  messages.push(`Glucides : écart de ${Math.round(dG)} g`);
+  else if (dG > 5) messages.push(`Glucides : légèrement hors cible (${Math.round(dG)} g)`);
+
+  if (dL > 10)  messages.push(`Lipides : écart de ${Math.round(dL)} g`);
+  else if (dL > 5) messages.push(`Lipides : légèrement hors cible (${Math.round(dL)} g)`);
+
+  if (mealsEmpty) messages.push('Repas non distribués — utilisez la répartition automatique.');
+
+  const status: PlanStatus =
+    dK > 100 || dP > 10 ? 'error' :
+    dK > 50  || dP > 5  ? 'warn'  : 'ok';
+
+  return { status, messages, bankEmpty: false, mealsEmpty: mealsEmpty ?? false };
 }

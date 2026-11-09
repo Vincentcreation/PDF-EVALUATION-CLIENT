@@ -1,26 +1,28 @@
 import type { FoodItem, FoodCategory, DayFoodBank, MealSlot, MealSlotData, MealSlotPortion } from '../types';
 
-// ─── Exact portion averages (per 1 portion, from original HTML) ───────────────
-// kcal computed via 4·P + 4·G + 9·L
+// ─── Single source of truth: portion averages per category ───────────────────
+// All nutrition values (bank, meals, PDF, validation) derive from these.
+// Food item choices are illustrative guidance only.
 export interface PortionAvg {
-  p: number; // protein g
-  g: number; // glucides g
-  l: number; // lipides g
-  kcal: number;
+  p: number;    // protein g
+  g: number;    // glucides g
+  l: number;    // lipides g
+  kcal: number; // = 4p + 4g + 9l
 }
 
 export const PORTION_AVERAGES: Record<FoodCategory, PortionAvg> = {
-  proteines: { p:  9, g:  0, l: 2, kcal: 9*4+0*4+2*9  },  // 54
-  feculent:  { p:  3, g: 18, l: 1, kcal: 3*4+18*4+1*9  }, // 93
-  legumes:   { p:  2, g:  7, l: 0, kcal: 2*4+7*4+0*9   }, // 36
-  fruits:    { p:  1, g: 15, l: 2, kcal: 1*4+15*4+2*9  }, // 82
-  laitiers:  { p:  7, g: 10, l: 2, kcal: 7*4+10*4+2*9  }, // 86
-  graisses:  { p:  1, g:  2, l: 6, kcal: 1*4+2*4+6*9   }, // 66
-  whey:      { p: 22, g:  2, l: 2, kcal: 22*4+2*4+2*9  }, // 114
+  proteines: { p:  9, g:  0, l: 2, kcal:  54 },
+  feculent:  { p:  3, g: 18, l: 1, kcal:  93 },
+  legumes:   { p:  2, g:  7, l: 0, kcal:  36 },
+  fruits:    { p:  1, g: 15, l: 2, kcal:  82 },
+  laitiers:  { p:  7, g: 10, l: 2, kcal:  86 },
+  graisses:  { p:  1, g:  2, l: 6, kcal:  66 },
+  whey:      { p: 22, g:  2, l: 2, kcal: 114 },
 };
 
-// ─── Food item catalogue (illustrative choices per category) ─────────────────
-// Nutritional values per item are ILLUSTRATIVE — totals use PORTION_AVERAGES above.
+// ─── Food item catalogue (illustrative food choices per category) ─────────────
+// Nutritional values per item are ILLUSTRATIVE — NOT used in calculations.
+// All calculations use PORTION_AVERAGES above.
 export const FOOD_ITEMS: Record<FoodCategory, FoodItem[]> = {
   proteines: [
     { id: 'volaille',       nom: 'Volaille (blanc)',       poidsG: 100, proteines: 25, glucides: 0,  lipides:  3, kcal: 127 },
@@ -89,21 +91,64 @@ export const FOOD_CATEGORIES: FoodCategory[] = [
   'proteines', 'feculent', 'legumes', 'fruits', 'laitiers', 'graisses', 'whey',
 ];
 
+// ─── Quebec meal slot labels ──────────────────────────────────────────────────
+// Quebec French uses different meal names from European French.
+export const MEAL_SLOT_LABELS: Record<string, string> = {
+  petitDejeuner:  'Déjeuner',       // breakfast in QC
+  collationMatin: 'Collation AM',
+  dejeuner:       'Dîner',          // lunch in QC
+  collationAprem: 'Collation PM',
+  diner:          'Souper',         // dinner in QC
+  collationSoir:  'Collation Soirée',
+};
+
+export const MEAL_SLOTS = [
+  'petitDejeuner',
+  'collationMatin',
+  'dejeuner',
+  'collationAprem',
+  'diner',
+  'collationSoir',
+] as const;
+
+// Approximate start hour of each meal slot (used for pre/post workout detection)
+export const MEAL_SLOT_HOURS: Record<MealSlot, number> = {
+  petitDejeuner:  7.0,
+  collationMatin: 10.0,
+  dejeuner:       12.0,
+  collationAprem: 15.0,
+  diner:          18.0,
+  collationSoir:  21.0,
+};
+
 // ─── Default food bank ────────────────────────────────────────────────────────
 export function defaultFoodBank(): DayFoodBank {
   return {
     proteines: 2, feculent: 3, legumes: 2, fruits: 2, laitiers: 1, graisses: 2, whey: 1,
     selectedProteines: 'volaille',
-    selectedFeculent: 'riz',
-    selectedLegumes: 'legumes_verts',
-    selectedFruits: 'pomme',
-    selectedLaitiers: 'fromage_blanc',
-    selectedGraisses: 'huile_olive',
-    selectedWhey: 'whey_std',
+    selectedFeculent:  'riz',
+    selectedLegumes:   'legumes_verts',
+    selectedFruits:    'pomme',
+    selectedLaitiers:  'fromage_blanc',
+    selectedGraisses:  'huile_olive',
+    selectedWhey:      'whey_std',
   };
 }
 
-// ─── Helper: get selected item for a category ─────────────────────────────────
+export function emptyFoodBank(): DayFoodBank {
+  return {
+    proteines: 0, feculent: 0, legumes: 0, fruits: 0, laitiers: 0, graisses: 0, whey: 0,
+    selectedProteines: 'volaille',
+    selectedFeculent:  'riz',
+    selectedLegumes:   'legumes_verts',
+    selectedFruits:    'pomme',
+    selectedLaitiers:  'fromage_blanc',
+    selectedGraisses:  'huile_olive',
+    selectedWhey:      'whey_std',
+  };
+}
+
+// ─── Helper: selected food item ───────────────────────────────────────────────
 export function getFoodItem(category: FoodCategory, id: string): FoodItem | undefined {
   return FOOD_ITEMS[category].find(f => f.id === id);
 }
@@ -113,9 +158,7 @@ export function getSelectedItem(bank: DayFoodBank, cat: FoodCategory): FoodItem 
   return getFoodItem(cat, bank[key] as string);
 }
 
-// ─── Compute totals using PORTION_AVERAGES ────────────────────────────────────
-// IMPORTANT: totals are based on category averages, not on individual food items.
-// The food item selector is for display/meal planning purposes only.
+// ─── Compute totals using PORTION_AVERAGES (single source of truth) ───────────
 export interface BankTotals {
   proteines: number;
   glucides:  number;
@@ -137,24 +180,26 @@ export function computeBankTotals(bank: DayFoodBank): BankTotals {
   return { proteines: Math.round(p), glucides: Math.round(g), lipides: Math.round(l), kcal: Math.round(k) };
 }
 
-// ─── Meal slot labels / order ─────────────────────────────────────────────────
-export const MEAL_SLOT_LABELS: Record<string, string> = {
-  petitDejeuner:  'Petit-déjeuner',
-  collationMatin: 'Collation matin',
-  dejeuner:       'Déjeuner',
-  collationAprem: 'Collation après-midi',
-  diner:          'Dîner',
-  collationSoir:  'Collation soir',
-};
+// Compute totals for one meal slot using PORTION_AVERAGES (consistent with bank)
+export function computeMealTotals(portions: MealSlotPortion[]): BankTotals {
+  let p = 0, g = 0, l = 0, k = 0;
+  for (const pt of portions) {
+    const avg = PORTION_AVERAGES[pt.category];
+    p += avg.p * pt.portions;
+    g += avg.g * pt.portions;
+    l += avg.l * pt.portions;
+    k += avg.kcal * pt.portions;
+  }
+  return { proteines: Math.round(p), glucides: Math.round(g), lipides: Math.round(l), kcal: Math.round(k) };
+}
 
-export const MEAL_SLOTS = [
-  'petitDejeuner',
-  'collationMatin',
-  'dejeuner',
-  'collationAprem',
-  'diner',
-  'collationSoir',
-] as const;
+export function isBankEmpty(bank: DayFoodBank): boolean {
+  return FOOD_CATEGORIES.every(cat => (bank[cat as keyof DayFoodBank] as number) === 0);
+}
+
+export function areMealsEmpty(meals: Record<MealSlot, MealSlotData>): boolean {
+  return MEAL_SLOTS.every(s => meals[s].portions.length === 0);
+}
 
 // ─── Default empty meals ──────────────────────────────────────────────────────
 export function defaultMealSlot(slot: string): MealSlotData {
@@ -167,57 +212,149 @@ export function defaultMeals(): Record<MealSlot, MealSlotData> {
   ) as Record<MealSlot, MealSlotData>;
 }
 
-// ─── Meal distribution presets ────────────────────────────────────────────────
-// 3 modes: classique, performance, equilibree
-// Weights per meal slot: [PD, CollMatin, Dej, CollAprem, Din, CollSoir]
+// ─── Half-portion distribution with controlled remainder ─────────────────────
+// Guarantees: sum(result) === total, precision = 0.5 portions.
+// Works in units of 0.5 (half-portions) internally.
+function distributeCategory(total: number, weights: number[]): number[] {
+  if (total <= 0) return weights.map(() => 0);
 
-/** Weights for the 'classique' distribution (all categories, from original HTML) */
-const CLASSIQUE_WEIGHTS = [0.30, 0.05, 0.25, 0.10, 0.25, 0.05];
+  // Work in half-portions to avoid decimal rounding drift
+  const halfTotal = Math.round(total * 2);
+  const rawHalves = weights.map(w => w * halfTotal);
+  const floors = rawHalves.map(h => Math.floor(h));
+  const fracs  = rawHalves.map((h, i) => h - floors[i]);
 
-/** 'performance': shifts carb/protein weight toward pre/post training meals
- *  (approximate — exact rule not in source; concentrates meals 1+2 pre, meal 3 post) */
-const PERFORMANCE_WEIGHTS = [0.25, 0.15, 0.30, 0.05, 0.20, 0.05];
+  const assigned  = floors.reduce((s, v) => s + v, 0);
+  let remainder = halfTotal - assigned;
 
-/** 'equilibree': equal 1/6 each */
-const EQUILIBREE_WEIGHTS = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
+  // Assign remaining half-portions to slots with highest fractional part
+  if (remainder > 0) {
+    const order = fracs
+      .map((f, i) => ({ i, f }))
+      .sort((a, b) => b.f - a.f);
+    for (let k = 0; k < remainder; k++) {
+      floors[order[k % order.length].i]++;
+    }
+  }
 
+  return floors.map(h => h / 2); // convert back to portions
+}
+
+// ─── Per-category weights for each distribution mode ─────────────────────────
+// Slots: [Déjeuner(7h), CollAM(10h), Dîner(12h), CollPM(15h), Souper(18h), CollSoir(21h)]
+//        idx:         [    0,            1,          2,           3,           4,          5 ]
+
+// "Classique" weights — each category has its own distribution pattern
+const CLASSIQUE_WEIGHTS: Record<FoodCategory, number[]> = {
+  //              Déj    CollAM  Dîner  CollPM  Souper  CollS
+  proteines: [0.15,  0.10,   0.25,  0.10,   0.30,   0.10],
+  feculent:  [0.30,  0.05,   0.25,  0.10,   0.25,   0.05],
+  legumes:   [0.00,  0.05,   0.40,  0.05,   0.45,   0.05],
+  fruits:    [0.30,  0.20,   0.00,  0.30,   0.15,   0.05],
+  laitiers:  [0.40,  0.20,   0.05,  0.25,   0.05,   0.05],
+  graisses:  [0.10,  0.05,   0.35,  0.10,   0.35,   0.05],
+  whey:      [0.00,  0.20,   0.00,  0.80,   0.00,   0.00],
+};
+
+// "Équilibrée" weights — equal 1/6 each
+const EQUILIBREE_WEIGHTS: number[] = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6];
+
+// ─── Distribution result map ─────────────────────────────────────────────────
 export type PortionMap = Partial<Record<MealSlot, Partial<Record<FoodCategory, number>>>>;
 
-function applyWeights(bank: DayFoodBank, weights: number[]): PortionMap {
+function buildPortionMap(bank: DayFoodBank, weightsByCat: Record<FoodCategory, number[]>): PortionMap {
   const result: PortionMap = {};
   for (const slot of MEAL_SLOTS) result[slot] = {};
 
   for (const cat of FOOD_CATEGORIES) {
     const total = bank[cat as keyof DayFoodBank] as number;
     if (!total) continue;
-
-    let allocated = 0;
-    for (let i = 0; i < MEAL_SLOTS.length; i++) {
-      const slot = MEAL_SLOTS[i];
-      if (i < MEAL_SLOTS.length - 1) {
-        const qty = Math.round(total * weights[i] * 10) / 10;  // 0.5 portion precision
-        if (qty > 0) result[slot]![cat as FoodCategory] = qty;
-        allocated += qty;
-      } else {
-        // Last slot gets remainder to avoid rounding drift
-        const rem = Math.round((total - allocated) * 10) / 10;
-        if (rem > 0) result[slot]![cat as FoodCategory] = rem;
-      }
-    }
+    const allocated = distributeCategory(total, weightsByCat[cat]);
+    allocated.forEach((qty, i) => {
+      if (qty > 0) result[MEAL_SLOTS[i]]![cat as FoodCategory] = qty;
+    });
   }
   return result;
 }
 
+// ─── Classique distribution ───────────────────────────────────────────────────
 export function distributeClassique(bank: DayFoodBank): PortionMap {
-  return applyWeights(bank, CLASSIQUE_WEIGHTS);
+  return buildPortionMap(bank, CLASSIQUE_WEIGHTS);
 }
 
-export function distributePerformance(bank: DayFoodBank): PortionMap {
-  return applyWeights(bank, PERFORMANCE_WEIGHTS);
-}
-
+// ─── Équilibrée distribution ──────────────────────────────────────────────────
 export function distributeEquilibree(bank: DayFoodBank): PortionMap {
-  return applyWeights(bank, EQUILIBREE_WEIGHTS);
+  const eq: Record<FoodCategory, number[]> = {} as Record<FoodCategory, number[]>;
+  for (const cat of FOOD_CATEGORIES) eq[cat] = EQUILIBREE_WEIGHTS;
+  return buildPortionMap(bank, eq);
+}
+
+// ─── Performance distribution (training-time-aware) ──────────────────────────
+// Determines pre/post workout meal slots from training time (HH:MM).
+// Pre-workout: moderate carbs, low fat, some protein.
+// Post-workout: high protein (+ whey), moderate carbs, low fat.
+export function distributePerformance(bank: DayFoodBank, heureEntrainement?: string): PortionMap {
+  // Parse training time
+  let trainH = 12.0; // default: noon
+  if (heureEntrainement) {
+    const [h, m] = heureEntrainement.split(':').map(Number);
+    if (!isNaN(h)) trainH = h + (m || 0) / 60;
+  }
+
+  // Find pre-workout slot: last slot that starts before training time
+  let preIdx = -1;
+  let postIdx = -1;
+  const hours = MEAL_SLOTS.map(s => MEAL_SLOT_HOURS[s as MealSlot]);
+
+  for (let i = hours.length - 1; i >= 0; i--) {
+    if (hours[i] < trainH - 0.5) { preIdx = i; break; }
+  }
+  for (let i = 0; i < hours.length; i++) {
+    if (hours[i] > trainH) { postIdx = i; break; }
+  }
+
+  // Fallback for very early or very late training
+  if (preIdx  < 0) preIdx  = 0;
+  if (postIdx < 0) postIdx = hours.length - 1;
+  if (postIdx === preIdx) postIdx = Math.min(preIdx + 1, hours.length - 1);
+
+  // Build per-category weights adjusted for pre/post
+  const weightsByCat: Record<FoodCategory, number[]> = {} as Record<FoodCategory, number[]>;
+
+  for (const cat of FOOD_CATEGORIES) {
+    // Start from classique weights as base
+    const base = [...CLASSIQUE_WEIGHTS[cat]];
+
+    if (cat === 'whey') {
+      // Whey goes 100% to post-workout
+      const w = base.map(() => 0);
+      w[postIdx] = 1.0;
+      weightsByCat[cat] = w;
+      continue;
+    }
+
+    if (cat === 'proteines') {
+      // Protein: extra weight to post-workout (+15%)
+      base[postIdx] = Math.min(1, base[postIdx] + 0.15);
+      base[preIdx]  = Math.max(0, base[preIdx]  - 0.05);
+    }
+    if (cat === 'feculent') {
+      // Carbs: extra weight to pre-workout (+20%), reduce post
+      base[preIdx]  = Math.min(1, base[preIdx]  + 0.20);
+      base[postIdx] = Math.max(0, base[postIdx] - 0.10);
+    }
+    if (cat === 'graisses') {
+      // Fat: reduce peri-workout (pre + post), redistribute to other meals
+      base[preIdx]  = Math.max(0, base[preIdx]  - 0.08);
+      base[postIdx] = Math.max(0, base[postIdx] - 0.08);
+    }
+
+    // Normalize to sum = 1
+    const sum = base.reduce((s, v) => s + v, 0);
+    weightsByCat[cat] = sum > 0 ? base.map(v => v / sum) : base;
+  }
+
+  return buildPortionMap(bank, weightsByCat);
 }
 
 // ─── Convert PortionMap → Record<MealSlot, MealSlotData> ─────────────────────

@@ -88,8 +88,8 @@ export default function DashboardPage() {
 
       {/* BMR / TDEE */}
       <div className="grid grid-cols-2 gap-4">
-        <MetricCard label="Métabolisme de base (BMR)" value={bmr} unit="kcal/j" note="Harris-Benedict" />
-        <MetricCard label="Dépense totale (TDEE)" value={tdee} unit="kcal/j" note={`BMR × ${(GOAL_MULTIPLIERS[goalType]).toFixed(2)} × activité`} />
+        <MetricCard label="EER sédentaire" value={bmr} unit="kcal/j" note="Formule IOM/EER (PA = 1,00)" />
+        <MetricCard label="Dépense totale (TDEE)" value={tdee} unit="kcal/j" note="EER avec coefficient d'activité physique" />
       </div>
 
       {/* 5 Goal Cards */}
