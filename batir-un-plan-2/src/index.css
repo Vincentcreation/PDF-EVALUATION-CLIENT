@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { font-family: 'Inter', system-ui, sans-serif; }
+  body { @apply bg-zinc-950 text-zinc-100; }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+}
+
+@layer components {
+  .input-field {
+    @apply bg-zinc-800/70 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100
+           placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-gold/60
+           focus:border-transparent transition-all w-full;
+  }
+  .input-field option { @apply bg-zinc-900; }
+
+  .btn-primary {
+    @apply px-5 py-2.5 rounded-lg bg-gold text-zinc-950 font-semibold text-sm
+           hover:bg-gold-light transition-all shadow-gold;
+  }
+  .btn-secondary {
+    @apply px-5 py-2.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300
+           font-medium text-sm hover:bg-zinc-700 transition-colors;
+  }
+
+  .card {
+    @apply rounded-2xl border border-zinc-800 bg-zinc-900/60 backdrop-blur-sm;
+  }
+
+  .section-title {
+    @apply text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3;
+  }
+}
+
+@layer utilities {
+  .text-gold  { color: #D4AF37; }
+  .text-gold-light { color: #E8C84E; }
+  .bg-gold    { background-color: #D4AF37; }
+  .bg-gold-light { background-color: #E8C84E; }
+  .border-gold { border-color: #D4AF37; }
+  .ring-gold  { --tw-ring-color: #D4AF37; }
+  .shadow-gold { box-shadow: 0 4px 14px 0 rgba(212, 175, 55, 0.25); }
+  .from-gold  { --tw-gradient-from: #D4AF37; }
+  .to-gold    { --tw-gradient-to: #D4AF37; }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #3f3f46 transparent;
+  }
+}
