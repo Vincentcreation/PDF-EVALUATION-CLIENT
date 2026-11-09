@@ -7,93 +7,82 @@ import {
 
 type Page = 'profil' | 'dashboard' | 'planificateur' | 'macros' | 'recap';
 
-interface AppState {
+interface AppCtx {
   page: Page;
+  setPage: (p: Page) => void;
+  activeDay: DayType;
+  setActiveDay: (d: DayType) => void;
   profiles: Profile[];
   activeProfileId: string | null;
+  activeProfile: Profile | null;
   plans: NutritionalPlan[];
   activePlanId: string | null;
-  activeDay: DayType;
-}
-
-interface AppActions {
-  setPage: (p: Page) => void;
-  setActiveDay: (d: DayType) => void;
-  saveProfileAndSelect: (profile: Profile) => void;
+  activePlan: NutritionalPlan | null;
+  saveProfileAndSelect: (p: Profile) => void;
   removeProfile: (id: string) => void;
   selectProfile: (id: string) => void;
-  savePlanAndSelect: (plan: NutritionalPlan) => void;
+  savePlanAndSelect: (p: NutritionalPlan) => void;
   removePlan: (id: string) => void;
   selectPlan: (id: string) => void;
-  refreshPlans: () => void;
 }
 
-type AppContextType = AppState & AppActions & {
-  activeProfile: Profile | null;
-  activePlan: NutritionalPlan | null;
-};
-
-const AppContext = createContext<AppContextType | null>(null);
+const AppContext = createContext<AppCtx | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [page, setPage] = useState<Page>('profil');
   const [activeDay, setActiveDay] = useState<DayType>('entrainement');
   const [profiles, setProfiles] = useState<Profile[]>(() => getProfiles());
-  const [activeProfileId, setActiveProfileIdState] = useState<string | null>(() => getActiveProfileId());
+  const [activeProfileId, setAPId] = useState<string | null>(() => getActiveProfileId());
   const [plans, setPlans] = useState<NutritionalPlan[]>(() => getPlans());
-  const [activePlanId, setActivePlanIdState] = useState<string | null>(() => getActivePlanId());
+  const [activePlanId, setAPlanId] = useState<string | null>(() => getActivePlanId());
 
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
-  const activePlan = plans.find(p => p.id === activePlanId) ?? null;
+  const activePlan    = plans.find(p => p.id === activePlanId) ?? null;
 
   const saveProfileAndSelect = useCallback((profile: Profile) => {
     saveProfile(profile);
     setProfiles(getProfiles());
-    setActiveProfileIdState(profile.id);
+    setAPId(profile.id);
     setActiveProfileId(profile.id);
   }, []);
 
   const removeProfile = useCallback((id: string) => {
     deleteProfile(id);
-    const remaining = getProfiles();
-    setProfiles(remaining);
+    const rem = getProfiles();
+    setProfiles(rem);
     if (activeProfileId === id) {
-      const next = remaining[0]?.id ?? null;
-      setActiveProfileIdState(next);
+      const next = rem[0]?.id ?? null;
+      setAPId(next);
       setActiveProfileId(next);
     }
   }, [activeProfileId]);
 
   const selectProfile = useCallback((id: string) => {
-    setActiveProfileIdState(id);
+    setAPId(id);
     setActiveProfileId(id);
   }, []);
 
   const savePlanAndSelect = useCallback((plan: NutritionalPlan) => {
     savePlan(plan);
     setPlans(getPlans());
-    setActivePlanIdState(plan.id);
+    setAPlanId(plan.id);
     setActivePlanId(plan.id);
   }, []);
 
   const removePlan = useCallback((id: string) => {
     deletePlan(id);
-    const remaining = getPlans();
-    setPlans(remaining);
+    const rem = getPlans();
+    setPlans(rem);
     if (activePlanId === id) {
-      const next = remaining[0]?.id ?? null;
-      setActivePlanIdState(next);
+      const next = rem[0]?.id ?? null;
+      setAPlanId(next);
       setActivePlanId(next);
     }
   }, [activePlanId]);
 
   const selectPlan = useCallback((id: string) => {
-    setActivePlanIdState(id);
+    setAPlanId(id);
     setActivePlanId(id);
-  }, []);
-
-  const refreshPlans = useCallback(() => {
-    setPlans(getPlans());
   }, []);
 
   return (
@@ -103,7 +92,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       profiles, activeProfileId, activeProfile,
       plans, activePlanId, activePlan,
       saveProfileAndSelect, removeProfile, selectProfile,
-      savePlanAndSelect, removePlan, selectPlan, refreshPlans,
+      savePlanAndSelect, removePlan, selectPlan,
     }}>
       {children}
     </AppContext.Provider>
@@ -112,6 +101,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
 export function useApp() {
   const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useApp must be used inside AppProvider');
+  if (!ctx) throw new Error('useApp must be inside AppProvider');
   return ctx;
 }

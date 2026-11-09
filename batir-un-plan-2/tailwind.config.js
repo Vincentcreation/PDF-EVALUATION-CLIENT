@@ -7,20 +7,21 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          900: '#0c4a6e',
+        gold: {
+          DEFAULT: '#D4AF37',
+          light:   '#E8C84E',
+          dark:    '#B8960F',
         },
-        sidebar: '#0f172a',
-        surface: '#1e293b',
-        card: '#1e293b',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      boxShadow: {
+        gold: '0 4px 14px 0 rgba(212, 175, 55, 0.25)',
+        'gold-lg': '0 8px 30px 0 rgba(212, 175, 55, 0.35)',
+      },
+      backgroundImage: {
+        'gradient-gold': 'linear-gradient(135deg, #D4AF37 0%, #E8C84E 100%)',
       },
     },
   },

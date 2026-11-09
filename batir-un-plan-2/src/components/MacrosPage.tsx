@@ -1,69 +1,54 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../store/AppContext';
-import { MACRO_PRESETS, calculateTargets } from '../utils/calculations';
-import type { MacroPresetKey } from '../utils/calculations';
-import type { MacroDistribution } from '../types';
+import { MACRO_PRESETS, DEFAULT_PROTEIN_GKG, PROTEIN_GKG_MIN, PROTEIN_GKG_MAX, calculateTargets, getWeightKg } from '../utils/calculations';
+import type { MacroPresetKey } from '../types';
+import type { MacroDistribution, ProteinMode } from '../types';
 import { AlertCircle } from 'lucide-react';
 
 export default function MacrosPage() {
   const { activeProfile, activePlan, savePlanAndSelect } = useApp();
 
-  const [preset, setPreset] = useState<MacroPresetKey>((activePlan?.macroPreset as MacroPresetKey) ?? 'equilibre');
-  const [distrib, setDistrib] = useState<MacroDistribution>(
-    activePlan?.macroDistribution ?? MACRO_PRESETS.equilibre
-  );
+  const [preset, setPreset]       = useState<MacroPresetKey>((activePlan?.macroPreset as MacroPresetKey) ?? 'equilibre');
+  const [distrib, setDistrib]     = useState<MacroDistribution>(activePlan?.macroDistribution ?? MACRO_PRESETS.equilibre);
+  const [proteinMode, setProteinMode] = useState<ProteinMode>(activePlan?.proteinMode ?? 'pct');
+  const [proteinGkg, setProteinGkg]   = useState(activePlan?.proteinGkg ?? DEFAULT_PROTEIN_GKG[activePlan?.goalType ?? 'maintien']);
 
   useEffect(() => {
     if (activePlan) {
       setPreset(activePlan.macroPreset as MacroPresetKey);
       setDistrib(activePlan.macroDistribution);
+      setProteinMode(activePlan.proteinMode);
+      setProteinGkg(activePlan.proteinGkg);
     }
   }, [activePlan?.id]);
 
-  if (!activeProfile) {
-    return <EmptyState message="Aucun profil actif. Créez un profil d'abord." />;
-  }
+  if (!activeProfile) return <EmptyState msg="Aucun profil actif." />;
+  if (!activePlan)    return <EmptyState msg="Aucun plan actif. Créez un plan depuis le tableau de bord." />;
 
-  if (!activePlan) {
-    return <EmptyState message="Aucun plan actif. Créez un plan depuis le tableau de bord." />;
-  }
-
-  const targets = calculateTargets(activeProfile, distrib, activePlan.goalType, activePlan.customKcal);
-  const total = distrib.proteines + distrib.glucides + distrib.lipides;
-  const isValid = total === 100;
+  const weightKg = getWeightKg(activeProfile);
+  const targets  = calculateTargets(activeProfile, distrib, activePlan.goalType, proteinMode, proteinGkg, activePlan.customKcal);
+  const total    = distrib.proteines + distrib.glucides + distrib.lipides;
+  const isValid  = total === 100;
 
   function applyPreset(key: MacroPresetKey) {
     setPreset(key);
-    if (key !== 'custom') {
-      setDistrib({
-        proteines: MACRO_PRESETS[key].proteines,
-        glucides: MACRO_PRESETS[key].glucides,
-        lipides: MACRO_PRESETS[key].lipides,
-      });
-    }
+    if (key !== 'custom') setDistrib({ ...MACRO_PRESETS[key] });
   }
 
-  function handleSliderChange(macro: keyof MacroDistribution, value: number) {
+  function handleSlider(macro: keyof MacroDistribution, val: number) {
     setPreset('custom');
     const others = (['proteines', 'glucides', 'lipides'] as (keyof MacroDistribution)[]).filter(m => m !== macro);
-    const remaining = 100 - value;
-    const totalOthers = others.reduce((s, m) => s + distrib[m], 0);
-
-    const newDistrib = { ...distrib, [macro]: value };
-    if (totalOthers > 0) {
-      others.forEach(m => {
-        newDistrib[m] = Math.round((distrib[m] / totalOthers) * remaining);
-      });
+    const rem = 100 - val;
+    const otherSum = others.reduce((s, m) => s + distrib[m], 0);
+    const nd = { ...distrib, [macro]: val };
+    if (otherSum > 0) {
+      others.forEach(m => { nd[m] = Math.round((distrib[m] / otherSum) * rem); });
     } else {
-      newDistrib[others[0]] = remaining;
-      newDistrib[others[1]] = 0;
+      nd[others[0]] = rem; nd[others[1]] = 0;
     }
-    // Ensure sum = 100
-    const sum = newDistrib.proteines + newDistrib.glucides + newDistrib.lipides;
-    if (sum !== 100) {
-      newDistrib[others[others.length - 1]] += 100 - sum;
-    }
-    setDistrib(newDistrib);
+    const sum = nd.proteines + nd.glucides + nd.lipides;
+    if (sum !== 100) nd[others[others.length - 1]] += 100 - sum;
+    setDistrib(nd);
   }
 
   function saveChanges() {
@@ -71,6 +56,8 @@ export default function MacrosPage() {
       ...activePlan!,
       macroPreset: preset,
       macroDistribution: distrib,
+      proteinMode,
+      proteinGkg,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -78,146 +65,159 @@ export default function MacrosPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Distribution des macros</h1>
-        <p className="text-slate-400 text-sm mt-1">Définissez la répartition des macronutriments pour <span className="text-sky-400">{activePlan.nom}</span></p>
+        <h1 className="text-2xl font-bold text-zinc-100">Distribution des macros</h1>
+        <p className="text-zinc-500 text-sm mt-1">Répartition des macronutriments pour <span className="text-gold">{activePlan.nom}</span></p>
       </div>
 
-      <div>
-        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Préréglages</h2>
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(MACRO_PRESETS) as MacroPresetKey[]).map(key => (
-            <button
-              key={key}
-              onClick={() => applyPreset(key)}
+      {/* Protein mode */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-300 mb-4">Mode de calcul des protéines</h3>
+        <div className="flex gap-2 mb-4">
+          {([['pct', '% calorique'], ['gkg', 'g / kg de poids']] as [ProteinMode, string][]).map(([m, l]) => (
+            <button key={m} onClick={() => setProteinMode(m)}
               className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                preset === key
-                  ? 'bg-sky-600 border-sky-500 text-white'
-                  : 'bg-slate-800 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {MACRO_PRESETS[key].label}
+                proteinMode === m ? 'bg-gold/10 border-gold/50 text-gold' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
+              }`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {proteinMode === 'gkg' && (
+          <div>
+            <label className="block text-xs text-zinc-400 mb-2">
+              Protéines: <span className="text-gold font-semibold">{proteinGkg} g/kg</span>
+              {' '}= {Math.round(proteinGkg * weightKg)} g/jour ({Math.round(weightKg)} kg)
+            </label>
+            <input type="range"
+              min={PROTEIN_GKG_MIN} max={PROTEIN_GKG_MAX} step={0.1}
+              value={proteinGkg}
+              onChange={e => setProteinGkg(+e.target.value)}
+              className="w-full accent-yellow-500"
+            />
+            <div className="flex justify-between text-xs text-zinc-600 mt-1">
+              <span>{PROTEIN_GKG_MIN} g/kg</span>
+              <span>{PROTEIN_GKG_MAX} g/kg</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 8 Presets */}
+      <div>
+        <p className="section-title">Préréglages macros</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {(Object.entries(MACRO_PRESETS) as [MacroPresetKey, typeof MACRO_PRESETS[MacroPresetKey]][]).map(([key, p]) => (
+            <button key={key} onClick={() => applyPreset(key)}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                preset === key ? 'border-gold/50 bg-gold/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-700'
+              }`}>
+              <p className={`text-xs font-semibold mb-1 ${preset === key ? 'text-gold' : 'text-zinc-300'}`}>{p.label}</p>
               {key !== 'custom' && (
-                <span className="ml-2 text-xs opacity-70">
-                  {MACRO_PRESETS[key].proteines}P/{MACRO_PRESETS[key].glucides}G/{MACRO_PRESETS[key].lipides}L
-                </span>
+                <p className="text-xs text-zinc-500">{p.proteines}P / {p.glucides}G / {p.lipides}L</p>
               )}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-5 rounded-2xl border border-slate-700 bg-slate-800/60">
-          <h3 className="text-sm font-semibold text-slate-300 mb-4">Répartition actuelle</h3>
-          <MacroBar label="Protéines" pct={distrib.proteines} grams={targets.proteinesG} color="bg-sky-500" />
-          <MacroBar label="Glucides" pct={distrib.glucides} grams={targets.glucidesG} color="bg-amber-500" />
-          <MacroBar label="Lipides" pct={distrib.lipides} grams={targets.lipidesG} color="bg-rose-500" />
-          <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between text-sm">
-            <span className="text-slate-400">Total</span>
-            <span className={`font-semibold ${isValid ? 'text-emerald-400' : 'text-rose-400'}`}>{total}%</span>
+      {/* Distribution visual + sliders */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* Bars */}
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-4">Répartition actuelle</h3>
+          <MacroBar label="Protéines" pct={distrib.proteines} g={targets.proteinesG} color="bg-sky-500" />
+          <MacroBar label="Glucides"  pct={distrib.glucides}  g={targets.glucidesG}  color="bg-amber-500" />
+          <MacroBar label="Lipides"   pct={distrib.lipides}   g={targets.lipidesG}   color="bg-rose-500" />
+          <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-between text-sm">
+            <span className="text-zinc-400">Total</span>
+            <span className={`font-semibold ${isValid ? 'text-emerald-400' : 'text-red-400'}`}>{total}%</span>
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl border border-slate-700 bg-slate-800/60">
-          <h3 className="text-sm font-semibold text-slate-300 mb-4">Ajustement personnalisé</h3>
+        {/* Sliders */}
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-4">Ajustement personnalisé</h3>
           <div className="space-y-5">
-            <SliderRow
-              label="Protéines" value={distrib.proteines}
-              accentColor="accent-sky-500"
-              onChange={v => handleSliderChange('proteines', v)}
-            />
-            <SliderRow
-              label="Glucides" value={distrib.glucides}
-              accentColor="accent-amber-500"
-              onChange={v => handleSliderChange('glucides', v)}
-            />
-            <SliderRow
-              label="Lipides" value={distrib.lipides}
-              accentColor="accent-rose-500"
-              onChange={v => handleSliderChange('lipides', v)}
-            />
+            <SliderRow label="Protéines" value={distrib.proteines} accent="accent-sky-500"    onChange={v => handleSlider('proteines', v)} />
+            <SliderRow label="Glucides"  value={distrib.glucides}  accent="accent-amber-500"  onChange={v => handleSlider('glucides', v)} />
+            <SliderRow label="Lipides"   value={distrib.lipides}   accent="accent-rose-500"   onChange={v => handleSlider('lipides', v)} />
           </div>
           {!isValid && (
-            <p className="mt-3 text-xs text-rose-400 flex items-center gap-1.5">
-              <AlertCircle size={12} /> La somme doit être égale à 100%
+            <p className="mt-3 text-xs text-red-400 flex items-center gap-1.5">
+              <AlertCircle size={12} /> La somme doit être 100%
             </p>
           )}
         </div>
       </div>
 
-      <div className="p-5 rounded-2xl border border-slate-700 bg-slate-800/60">
-        <h3 className="text-sm font-semibold text-slate-300 mb-4">Aperçu calorique pour {targets.targetKcal.toLocaleString()} kcal/j</h3>
-        <div className="grid grid-cols-3 gap-4">
-          <PreviewCard label="Protéines" g={targets.proteinesG} pct={distrib.proteines} color="text-sky-400" />
-          <PreviewCard label="Glucides" g={targets.glucidesG} pct={distrib.glucides} color="text-amber-400" />
-          <PreviewCard label="Lipides" g={targets.lipidesG} pct={distrib.lipides} color="text-rose-400" />
+      {/* Caloric preview */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-zinc-300 mb-4">
+          Aperçu — {targets.targetKcal.toLocaleString('fr-CA')} kcal/j
+        </h3>
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <p className="text-2xl font-bold text-sky-400">{targets.proteinesG}g</p>
+            <p className="text-xs text-zinc-500 mt-1">Protéines · {distrib.proteines}%</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-amber-400">{targets.glucidesG}g</p>
+            <p className="text-xs text-zinc-500 mt-1">Glucides · {distrib.glucides}%</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-rose-400">{targets.lipidesG}g</p>
+            <p className="text-xs text-zinc-500 mt-1">Lipides · {distrib.lipides}%</p>
+          </div>
         </div>
       </div>
 
-      <button
-        onClick={saveChanges}
-        disabled={!isValid}
-        className="px-6 py-2.5 rounded-lg bg-sky-600 text-white font-medium text-sm hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
+      <button onClick={saveChanges} disabled={!isValid} className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
         Enregistrer la distribution
       </button>
     </div>
   );
 }
 
-function MacroBar({ label, pct, grams, color }: { label: string; pct: number; grams: number; color: string }) {
+function MacroBar({ label, pct, g, color }: { label: string; pct: number; g: number; color: string }) {
   return (
     <div className="mb-4">
       <div className="flex justify-between items-baseline mb-1.5">
         <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
-          <span className="text-sm text-slate-300">{label}</span>
+          <span className={`w-2 h-2 rounded-full ${color}`} />
+          <span className="text-sm text-zinc-300">{label}</span>
         </div>
-        <div className="flex items-baseline gap-2 text-sm">
-          <span className="text-white font-semibold">{grams}g</span>
-          <span className="text-slate-400">{pct}%</span>
+        <div className="flex gap-2 text-sm">
+          <span className="font-semibold text-zinc-100">{g}g</span>
+          <span className="text-zinc-500">{pct}%</span>
         </div>
       </div>
-      <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
-        <div className={`h-full rounded-full ${color} transition-all duration-300`} style={{ width: `${pct}%` }} />
+      <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
 }
 
-function SliderRow({ label, value, accentColor, onChange }: { label: string; value: number; accentColor: string; onChange: (v: number) => void }) {
+function SliderRow({ label, value, accent, onChange }: { label: string; value: number; accent: string; onChange: (v: number) => void }) {
   return (
     <div>
       <div className="flex justify-between mb-1.5">
-        <span className="text-sm text-slate-300">{label}</span>
-        <span className="text-sm font-semibold text-white">{value}%</span>
+        <span className="text-sm text-zinc-300">{label}</span>
+        <span className="text-sm font-semibold text-zinc-100">{value}%</span>
       </div>
-      <input
-        type="range"
-        min={5} max={70} step={1}
-        value={value}
+      <input type="range" min={5} max={70} step={1} value={value}
         onChange={e => onChange(+e.target.value)}
-        className={`w-full h-2 rounded-full ${accentColor} bg-slate-700 cursor-pointer`}
-      />
+        className={`w-full h-2 rounded-full ${accent} bg-zinc-700 cursor-pointer`} />
     </div>
   );
 }
 
-function PreviewCard({ label, g, pct, color }: { label: string; g: number; pct: number; color: string }) {
-  return (
-    <div className="text-center">
-      <p className={`text-2xl font-bold ${color}`}>{g}g</p>
-      <p className="text-xs text-slate-400 mt-1">{label}</p>
-      <p className="text-xs text-slate-500">{pct}%</p>
-    </div>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ msg }: { msg: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-64 text-center">
-      <AlertCircle size={36} className="text-slate-500 mb-3" />
-      <p className="text-slate-400">{message}</p>
+      <AlertCircle size={36} className="text-zinc-600 mb-3" />
+      <p className="text-zinc-400">{msg}</p>
     </div>
   );
 }

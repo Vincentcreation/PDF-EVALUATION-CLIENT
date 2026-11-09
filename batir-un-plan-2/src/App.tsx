@@ -9,12 +9,12 @@ import RecapPage from './components/RecapPage';
 function PageRouter() {
   const { page } = useApp();
   switch (page) {
-    case 'profil': return <ProfilPage />;
-    case 'dashboard': return <DashboardPage />;
+    case 'profil':        return <ProfilPage />;
+    case 'dashboard':     return <DashboardPage />;
     case 'planificateur': return <PlanificateurPage />;
-    case 'macros': return <MacrosPage />;
-    case 'recap': return <RecapPage />;
-    default: return <ProfilPage />;
+    case 'macros':        return <MacrosPage />;
+    case 'recap':         return <RecapPage />;
+    default:              return <ProfilPage />;
   }
 }
 
@@ -22,8 +22,8 @@ function Layout() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="p-6 md:p-8">
+      <main className="flex-1 overflow-y-auto scrollbar-thin bg-zinc-950">
+        <div className="p-5 md:p-8 max-h-screen">
           <PageRouter />
         </div>
       </main>
